@@ -336,13 +336,13 @@ $('#live-start').onclick = () => {
     $('#live-values').innerHTML = paths.map((p, i) => `<div><span style="color:${COLORS[i % COLORS.length]}">■</span> ${esc(p)} = <b>${esc(v[i])}</b></div>`).join(''); drawLive(); };
   es.addEventListener('error', ev => { if (ev.data) toast('live: ' + ev.data, 5000); stopLive(); });
 };
-const COLORS = ['#5aa9ff', '#3fb950', '#f0883e', '#d2a8ff', '#ff7b72', '#e3b341'];
+const COLORS = ['#1a7f37', '#0a5aa8', '#d4731c', '#8250df', '#cf222e', '#b07d00'];
 function stopLive() { if (S.live) { S.live.es.close(); S.live = null; } }
 $('#live-stop').onclick = stopLive;
 function drawLive() {
   const cv = $('#live-canvas'), dpr = devicePixelRatio || 1; cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr;
   const g = cv.getContext('2d'); g.scale(dpr, dpr); const W = cv.clientWidth, H = cv.clientHeight;
-  g.clearRect(0, 0, W, H); g.strokeStyle = '#2a3340'; g.beginPath(); for (let y = 0; y <= 4; y++) { g.moveTo(0, y * H / 4); g.lineTo(W, y * H / 4); } g.stroke();
+  g.clearRect(0, 0, W, H); g.strokeStyle = '#d6ead6'; g.beginPath(); for (let y = 0; y <= 4; y++) { g.moveTo(0, y * H / 4); g.lineTo(W, y * H / 4); } g.stroke();
   S.live.data.forEach((d, i) => {
     if (d.length < 2) return; const mn = Math.min(...d), mx = Math.max(...d), span = mx - mn || 1;
     g.strokeStyle = COLORS[i % COLORS.length]; g.lineWidth = 1.5; g.beginPath();
