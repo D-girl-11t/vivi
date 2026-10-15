@@ -1,0 +1,16 @@
+id: hwmon
+title: hwmon
+summary: Hardware monitoring for temperature, voltage, fan and power. /sys/class/hwmon, tool sensors.
+live: {kind: sysfs, hint: "/sys/class/hwmon/hwmon0/temp1_input"}
+steps:
+  - id: hwmondev
+    layer: subsystem
+    title: "hwmon device registered"
+    why: hwmon gives standard sysfs names (temp1_input in millidegrees, in0_input in mV) so tools like `sensors` work without knowing the chip.
+    command: "grep . /sys/class/hwmon/*/name"
+    check: {type: scan, section: hwmon, pattern: "{{ dev.hwmon_name or dev.node_name }}"}
+  - id: read
+    layer: userspace
+    title: "Read values"
+    command: "grep . /sys/class/hwmon/hwmon*/*_input"
+    check: {type: manual}

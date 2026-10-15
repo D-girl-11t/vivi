@@ -1,0 +1,61 @@
+# SoC profile: ST STM32MP15x. STARTER profile, which shows that only this file changes
+# when you switch vendors. The pin model is different: there is no macro header;
+# you give port/pin plus an alternate-function (AF) number from the datasheet.
+id: stm32mp15
+title: ST STM32MP15x
+arch: arm
+dts_dir: arch/arm/boot/dts/st
+sibling_prefix: stm32mp15
+status: starter   # pin/AF data must come from your form (datasheet table "Alternate functions")
+
+pins:
+  header: null
+  # pads are written like PA5 / PD12 in the peripheral form, plus `af: 5`
+  pad_regex: '^P([A-Z])(\d+)$'
+  usage_regex: "STM32_PINMUX\\('{port}',\\s*{num},"
+  gpio_controller: 'gpio{port_lower}'
+  pinctrl_parent: '&pinctrl'
+
+padconf:
+  i2c: 'bias-disable; drive-open-drain; slew-rate = <0>;'
+  spi: 'bias-disable; drive-push-pull; slew-rate = <1>;'
+  uart: 'bias-disable; drive-push-pull; slew-rate = <0>;'
+  sai: 'bias-disable; drive-push-pull; slew-rate = <0>;'
+  gpio: 'bias-disable;'
+  default: 'bias-disable;'
+
+controllers:
+  i2c:  { label: 'i2c{n}' }
+  spi:  { label: 'spi{n}' }
+  uart: { label: 'usart{n}', tty: 'ttySTM{m}' }
+  sai:  { label: 'sai{n}a' }
+  usb:  { label: 'usbh_ehci' }
+  gpio: { label: 'gpio{n}' }
+
+snippets:
+  pinctrl_group: |
+    {{ dev.label }}_pins: {{ dev.slug }}-0 {
+    	pins {
+    		pinmux = {% for p in pins %}<STM32_PINMUX('{{ p.port }}', {{ p.num }}, {{ 'GPIO' if p.af is none else 'AF' ~ p.af }})>{{ ', ' if not loop.last else ';' }}{% endfor %}
+    		{{ pins[0].padconf if pins else '' }}
+    	};
+    };
+  pinctrl_props: |
+    pinctrl-names = "default";
+    pinctrl-0 = <&{{ dev.label }}_pins>;
+  controller_extra:
+    i2c: |
+      clock-frequency = <{{ dev.connection.bus_hz | default(100000) }}>;
+
+coprocessor:
+  core: Cortex-M4
+  linux_api: remoteproc + RPMsg
+  dt_label: m4_rproc
+  notes: Same remoteproc/RPMsg model as the i.MX93 M33.
+
+deploy:
+  build_dtb: 'make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- {{ files.dtb_target }}'
+  build_kernel: 'make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- -j$(nproc) zImage modules'
+  install_hint: |
+    OpenSTLinux keeps kernel and DTBs on the bootfs partition, usually mounted at /boot.
+  install_dtb: 'scp {{ files.dtb_out }} {{ board.host | default("root@board") }}:/boot/'

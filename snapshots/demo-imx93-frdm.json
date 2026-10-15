@@ -1,0 +1,1585 @@
+{
+ "meta": {
+  "time": "demo",
+  "source": "compiled from imx93-11x11-frdm.dts",
+  "demo": true
+ },
+ "system": {
+  "uname": "Linux (demo snapshot, no real board)",
+  "model": "NXP i.MX93 11X11 FRDM board",
+  "compatible": ""
+ },
+ "dt": [
+  {
+   "path": "/",
+   "compatible": [
+    "fsl,imx93-11x11-frdm\\0fsl,imx93"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/can-phy",
+   "compatible": [
+    "nxp,tja1051"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/clock-ext1",
+   "compatible": [
+    "fixed-clock"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/clock-osc-24m",
+   "compatible": [
+    "fixed-clock"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/clock-osc-32k",
+   "compatible": [
+    "fixed-clock"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/cpus/cpu@0",
+   "compatible": [
+    "arm,cortex-a55"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/cpus/cpu@100",
+   "compatible": [
+    "arm,cortex-a55"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/cpus/idle-states/cpu-pd-wait",
+   "compatible": [
+    "arm,idle-state"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/cpus/l2-cache-l0",
+   "compatible": [
+    "cache"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/cpus/l2-cache-l1",
+   "compatible": [
+    "cache"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/cpus/l3-cache",
+   "compatible": [
+    "cache"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/gpio-keys",
+   "compatible": [
+    "gpio-keys"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/interrupt-controller@48000000",
+   "compatible": [
+    "arm,gic-v3"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/mmc-pwrseq",
+   "compatible": [
+    "mmc-pwrseq-simple"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/mqs1",
+   "compatible": [
+    "fsl,imx93-mqs"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/mqs2",
+   "compatible": [
+    "fsl,imx93-mqs"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/pmu",
+   "compatible": [
+    "arm,cortex-a55-pmu"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/psci",
+   "compatible": [
+    "arm,psci-1.0"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/regulator-usdhc2",
+   "compatible": [
+    "regulator-fixed"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/regulator-usdhc3",
+   "compatible": [
+    "regulator-fixed"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/remoteproc-cm33",
+   "compatible": [
+    "fsl,imx93-cm33"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/reserved-memory/linux,cma",
+   "compatible": [
+    "shared-dma-pool"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/reserved-memory/vdevbuffer@a4020000",
+   "compatible": [
+    "shared-dma-pool"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0",
+   "compatible": [
+    "simple-bus"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000",
+   "compatible": [
+    "fsl,aips-bus\\0simple-bus"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/can@425b0000",
+   "compatible": [
+    "fsl,imx93-flexcan"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/dma-controller@42000000",
+   "compatible": [
+    "fsl,imx93-edma4"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@42530000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@42530000/rtc@53",
+   "compatible": [
+    "nxp,pcf2131"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@42530000/tcpc@50",
+   "compatible": [
+    "nxp,ptn5110\\0tcpci"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@42530000/tcpc@50/connector",
+   "compatible": [
+    "usb-c-connector"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@42540000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@426b0000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@426c0000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@426d0000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i2c@426e0000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/i3c@42520000",
+   "compatible": [
+    "silvaco,i3c-master-v1"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/mailbox@42440000",
+   "compatible": [
+    "fsl,imx93-mu\\0fsl,imx8ulp-mu"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/pwm@424e0000",
+   "compatible": [
+    "fsl,imx7ulp-pwm"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/pwm@424f0000",
+   "compatible": [
+    "fsl,imx7ulp-pwm"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/pwm@42500000",
+   "compatible": [
+    "fsl,imx7ulp-pwm"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/pwm@42510000",
+   "compatible": [
+    "fsl,imx7ulp-pwm"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/sai@42650000",
+   "compatible": [
+    "fsl,imx93-sai"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/sai@42660000",
+   "compatible": [
+    "fsl,imx93-sai"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@42570000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@42580000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@42590000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@42590000/bluetooth",
+   "compatible": [
+    "nxp,88w8987-bt"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@425a0000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@42690000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/serial@426a0000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@42550000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@42560000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@425e0000",
+   "compatible": [
+    "nxp,imx93-fspi\\0nxp,imx8mm-fspi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@426f0000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@42700000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@42710000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/spi@42720000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/syscon@42420000",
+   "compatible": [
+    "fsl,imx93-wakeupmix-syscfg\\0syscon"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/watchdog@42490000",
+   "compatible": [
+    "fsl,imx93-wdt"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42000000/watchdog@424a0000",
+   "compatible": [
+    "fsl,imx93-wdt"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/watchdog@424b0000",
+   "compatible": [
+    "fsl,imx93-wdt"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42000000/xcvr@42680000",
+   "compatible": [
+    "fsl,imx93-xcvr"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@42800000",
+   "compatible": [
+    "fsl,aips-bus\\0simple-bus"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42800000/ethernet@42890000",
+   "compatible": [
+    "fsl,imx93-fec\\0fsl,imx8mq-fec\\0fsl,imx6sx-fec"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42800000/ethernet@428a0000",
+   "compatible": [
+    "nxp,imx93-dwmac-eqos\\0snps,dwmac-5.10a"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42800000/ethernet@428a0000/mdio",
+   "compatible": [
+    "snps,dwmac-mdio"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42800000/mmc@42850000",
+   "compatible": [
+    "fsl,imx93-usdhc\\0fsl,imx8mm-usdhc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42800000/mmc@42860000",
+   "compatible": [
+    "fsl,imx93-usdhc\\0fsl,imx8mm-usdhc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@42800000/mmc@428b0000",
+   "compatible": [
+    "fsl,imx93-usdhc\\0fsl,imx8mm-usdhc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000",
+   "compatible": [
+    "fsl,aips-bus\\0simple-bus"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/adc@44530000",
+   "compatible": [
+    "nxp,imx93-adc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/bbnsm@44440000",
+   "compatible": [
+    "nxp,imx93-bbnsm\\0syscon\\0simple-mfd"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/bbnsm@44440000/pwrkey",
+   "compatible": [
+    "nxp,imx93-bbnsm-pwrkey"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/bbnsm@44440000/rtc",
+   "compatible": [
+    "nxp,imx93-bbnsm-rtc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/can@443a0000",
+   "compatible": [
+    "fsl,imx93-flexcan"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/clock-controller@44450000",
+   "compatible": [
+    "fsl,imx93-ccm"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/clock-controller@44480000",
+   "compatible": [
+    "fsl,imx93-anatop"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/dma-controller@44000000",
+   "compatible": [
+    "fsl,imx93-edma3"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i2c@44340000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i2c@44340000/gpio@20",
+   "compatible": [
+    "nxp,pcal6408"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i2c@44350000",
+   "compatible": [
+    "fsl,imx93-lpi2c\\0fsl,imx7ulp-lpi2c"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i2c@44350000/eeprom@50",
+   "compatible": [
+    "atmel,24c256"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i2c@44350000/gpio@22",
+   "compatible": [
+    "nxp,pcal6524"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i2c@44350000/pmic@25",
+   "compatible": [
+    "nxp,pca9451a"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/i3c@44330000",
+   "compatible": [
+    "silvaco,i3c-master-v1"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/mailbox@44230000",
+   "compatible": [
+    "fsl,imx93-mu\\0fsl,imx8ulp-mu"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/micfil@44520000",
+   "compatible": [
+    "fsl,imx93-micfil"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/pinctrl@443c0000",
+   "compatible": [
+    "fsl,imx93-iomuxc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/pwm@44310000",
+   "compatible": [
+    "fsl,imx7ulp-pwm"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/pwm@44320000",
+   "compatible": [
+    "fsl,imx7ulp-pwm"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/sai@443b0000",
+   "compatible": [
+    "fsl,imx93-sai"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/serial@44380000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/serial@44390000",
+   "compatible": [
+    "fsl,imx93-lpuart\\0fsl,imx8ulp-lpuart\\0fsl,imx7ulp-lpuart"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/spi@44360000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/spi@44370000",
+   "compatible": [
+    "fsl,imx93-spi\\0fsl,imx7ulp-spi"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/syscon@44210000",
+   "compatible": [
+    "fsl,imx93-aonmix-ns-syscfg\\0syscon"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/system-controller@44460000",
+   "compatible": [
+    "fsl,imx93-src\\0syscon"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/system-controller@44460000/power-domain@44461800",
+   "compatible": [
+    "fsl,imx93-src-slice"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/system-controller@44460000/power-domain@44462400",
+   "compatible": [
+    "fsl,imx93-src-slice"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/timer@44290000",
+   "compatible": [
+    "nxp,sysctr-timer"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/tmu@44482000",
+   "compatible": [
+    "fsl,imx93-tmu"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/bus@44000000/watchdog@442d0000",
+   "compatible": [
+    "fsl,imx93-wdt"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/bus@44000000/watchdog@442e0000",
+   "compatible": [
+    "fsl,imx93-wdt"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/ddr-pmu@4e300dc0",
+   "compatible": [
+    "fsl,imx93-ddr-pmu"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/display-controller@4ae30000",
+   "compatible": [
+    "fsl,imx93-lcdif"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/efuse@47510000",
+   "compatible": [
+    "fsl,imx93-ocotp\\0syscon"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/gpio@43810000",
+   "compatible": [
+    "fsl,imx93-gpio\\0fsl,imx8ulp-gpio"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/gpio@43820000",
+   "compatible": [
+    "fsl,imx93-gpio\\0fsl,imx8ulp-gpio"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/gpio@43830000",
+   "compatible": [
+    "fsl,imx93-gpio\\0fsl,imx8ulp-gpio"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/gpio@47400000",
+   "compatible": [
+    "fsl,imx93-gpio\\0fsl,imx8ulp-gpio"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/mailbox@47520000",
+   "compatible": [
+    "fsl,imx93-mu-s4"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/memory-controller@4e300000",
+   "compatible": [
+    "nxp,imx9-memory-controller"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/npu@4a900000",
+   "compatible": [
+    "fsl,imx93-npu\\0arm,ethos-u65"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/system-controller@4ac10000",
+   "compatible": [
+    "fsl,imx93-media-blk-ctrl\\0syscon"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/system-controller@4ac10000/bridge@20",
+   "compatible": [
+    "fsl,imx93-ldb"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/system-controller@4ac10000/dpi-bridge",
+   "compatible": [
+    "nxp,imx93-pdfc"
+   ],
+   "status": "disabled"
+  },
+  {
+   "path": "/soc@0/usb@4c100000",
+   "compatible": [
+    "fsl,imx93-usb\\0fsl,imx7d-usb\\0fsl,imx27-usb"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/usb@4c200000",
+   "compatible": [
+    "fsl,imx93-usb\\0fsl,imx7d-usb\\0fsl,imx27-usb"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/usbmisc@4c100200",
+   "compatible": [
+    "fsl,imx8mm-usbmisc\\0fsl,imx7d-usbmisc\\0fsl,imx6q-usbmisc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/soc@0/usbmisc@4c200200",
+   "compatible": [
+    "fsl,imx8mm-usbmisc\\0fsl,imx7d-usbmisc\\0fsl,imx6q-usbmisc"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/sound-mqs",
+   "compatible": [
+    "fsl,imx-audio-mqs"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/sram@20480000",
+   "compatible": [
+    "mmio-sram"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/timer",
+   "compatible": [
+    "arm,armv8-timer"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/usbphynop1",
+   "compatible": [
+    "usb-nop-xceiv"
+   ],
+   "status": "okay"
+  },
+  {
+   "path": "/usbphynop2",
+   "compatible": [
+    "usb-nop-xceiv"
+   ],
+   "status": "okay"
+  }
+ ],
+ "symbols": {
+  "cpus": "/cpus",
+  "cpu_pd_wait": "/cpus/idle-states/cpu-pd-wait",
+  "A55_0": "/cpus/cpu@0",
+  "A55_1": "/cpus/cpu@100",
+  "l2_cache_l0": "/cpus/l2-cache-l0",
+  "l2_cache_l1": "/cpus/l2-cache-l1",
+  "l3_cache": "/cpus/l3-cache",
+  "osc_32k": "/clock-osc-32k",
+  "osc_24m": "/clock-osc-24m",
+  "clk_ext1": "/clock-ext1",
+  "gic": "/interrupt-controller@48000000",
+  "mqs1": "/mqs1",
+  "mqs2": "/mqs2",
+  "usbphynop1": "/usbphynop1",
+  "usbphynop2": "/usbphynop2",
+  "aips1": "/soc@0/bus@44000000",
+  "edma1": "/soc@0/bus@44000000/dma-controller@44000000",
+  "aonmix_ns_gpr": "/soc@0/bus@44000000/syscon@44210000",
+  "system_counter": "/soc@0/bus@44000000/timer@44290000",
+  "wdog1": "/soc@0/bus@44000000/watchdog@442d0000",
+  "wdog2": "/soc@0/bus@44000000/watchdog@442e0000",
+  "tpm1": "/soc@0/bus@44000000/pwm@44310000",
+  "tpm2": "/soc@0/bus@44000000/pwm@44320000",
+  "i3c1": "/soc@0/bus@44000000/i3c@44330000",
+  "lpi2c1": "/soc@0/bus@44000000/i2c@44340000",
+  "pcal6408": "/soc@0/bus@44000000/i2c@44340000/gpio@20",
+  "lpi2c2": "/soc@0/bus@44000000/i2c@44350000",
+  "pcal6524": "/soc@0/bus@44000000/i2c@44350000/gpio@22",
+  "buck1": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/BUCK1",
+  "buck2": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/BUCK2",
+  "buck4": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/BUCK4",
+  "buck5": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/BUCK5",
+  "buck6": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/BUCK6",
+  "ldo1": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/LDO1",
+  "ldo4": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/LDO4",
+  "ldo5": "/soc@0/bus@44000000/i2c@44350000/pmic@25/regulators/LDO5",
+  "eeprom": "/soc@0/bus@44000000/i2c@44350000/eeprom@50",
+  "lpspi1": "/soc@0/bus@44000000/spi@44360000",
+  "lpspi2": "/soc@0/bus@44000000/spi@44370000",
+  "lpuart1": "/soc@0/bus@44000000/serial@44380000",
+  "lpuart2": "/soc@0/bus@44000000/serial@44390000",
+  "flexcan1": "/soc@0/bus@44000000/can@443a0000",
+  "sai1": "/soc@0/bus@44000000/sai@443b0000",
+  "iomuxc": "/soc@0/bus@44000000/pinctrl@443c0000",
+  "pinctrl_eqos": "/soc@0/bus@44000000/pinctrl@443c0000/eqosgrp",
+  "pinctrl_eqos_sleep": "/soc@0/bus@44000000/pinctrl@443c0000/eqossleepgrp",
+  "pinctrl_fec": "/soc@0/bus@44000000/pinctrl@443c0000/fecgrp",
+  "pinctrl_fec_sleep": "/soc@0/bus@44000000/pinctrl@443c0000/fecsleepgrp",
+  "pinctrl_flexcan2": "/soc@0/bus@44000000/pinctrl@443c0000/flexcan2grp",
+  "pinctrl_flexcan2_sleep": "/soc@0/bus@44000000/pinctrl@443c0000/flexcan2sleepgrp",
+  "pinctrl_lpi2c1": "/soc@0/bus@44000000/pinctrl@443c0000/lpi2c1grp",
+  "pinctrl_lpi2c2": "/soc@0/bus@44000000/pinctrl@443c0000/lpi2c2grp",
+  "pinctrl_lpi2c3": "/soc@0/bus@44000000/pinctrl@443c0000/lpi2c3grp",
+  "pinctrl_mqs1": "/soc@0/bus@44000000/pinctrl@443c0000/mqs1grp",
+  "pinctrl_pcal6524": "/soc@0/bus@44000000/pinctrl@443c0000/pcal6524grp",
+  "pinctrl_reg_usdhc2_vmmc": "/soc@0/bus@44000000/pinctrl@443c0000/regusdhc2vmmcgrp",
+  "pinctrl_uart1": "/soc@0/bus@44000000/pinctrl@443c0000/uart1grp",
+  "pinctrl_uart5": "/soc@0/bus@44000000/pinctrl@443c0000/uart5grp",
+  "pinctrl_usdhc1": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc1grp",
+  "pinctrl_usdhc1_100mhz": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc1-100mhzgrp",
+  "pinctrl_usdhc1_200mhz": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc1-200mhzgrp",
+  "pinctrl_usdhc2_gpio": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc2gpiogrp",
+  "pinctrl_usdhc2_gpio_sleep": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc2gpiosleepgrp",
+  "pinctrl_usdhc2": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc2grp",
+  "pinctrl_usdhc2_100mhz": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc2-100mhzgrp",
+  "pinctrl_usdhc2_200mhz": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc2-200mhzgrp",
+  "pinctrl_usdhc2_sleep": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc2-sleepgrp",
+  "pinctrl_usdhc3": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc3grp",
+  "pinctrl_usdhc3_100mhz": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc3-100mhzgrp",
+  "pinctrl_usdhc3_200mhz": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc3-200mhzgrp",
+  "pinctrl_usdhc3_sleep": "/soc@0/bus@44000000/pinctrl@443c0000/usdhc3grpsleepgrp",
+  "pinctrl_wdog": "/soc@0/bus@44000000/pinctrl@443c0000/wdoggrp",
+  "bbnsm": "/soc@0/bus@44000000/bbnsm@44440000",
+  "bbnsm_rtc": "/soc@0/bus@44000000/bbnsm@44440000/rtc",
+  "bbnsm_pwrkey": "/soc@0/bus@44000000/bbnsm@44440000/pwrkey",
+  "clk": "/soc@0/bus@44000000/clock-controller@44450000",
+  "src": "/soc@0/bus@44000000/system-controller@44460000",
+  "mediamix": "/soc@0/bus@44000000/system-controller@44460000/power-domain@44462400",
+  "mlmix": "/soc@0/bus@44000000/system-controller@44460000/power-domain@44461800",
+  "micfil": "/soc@0/bus@44000000/micfil@44520000",
+  "adc1": "/soc@0/bus@44000000/adc@44530000",
+  "mu1": "/soc@0/bus@44000000/mailbox@44230000",
+  "tmu": "/soc@0/bus@44000000/tmu@44482000",
+  "aips2": "/soc@0/bus@42000000",
+  "edma2": "/soc@0/bus@42000000/dma-controller@42000000",
+  "wakeupmix_gpr": "/soc@0/bus@42000000/syscon@42420000",
+  "wdog3": "/soc@0/bus@42000000/watchdog@42490000",
+  "wdog4": "/soc@0/bus@42000000/watchdog@424a0000",
+  "wdog5": "/soc@0/bus@42000000/watchdog@424b0000",
+  "tpm3": "/soc@0/bus@42000000/pwm@424e0000",
+  "tpm4": "/soc@0/bus@42000000/pwm@424f0000",
+  "tpm5": "/soc@0/bus@42000000/pwm@42500000",
+  "tpm6": "/soc@0/bus@42000000/pwm@42510000",
+  "i3c2": "/soc@0/bus@42000000/i3c@42520000",
+  "lpi2c3": "/soc@0/bus@42000000/i2c@42530000",
+  "ptn5110": "/soc@0/bus@42000000/i2c@42530000/tcpc@50",
+  "typec1_con": "/soc@0/bus@42000000/i2c@42530000/tcpc@50/connector",
+  "typec1_dr_sw": "/soc@0/bus@42000000/i2c@42530000/tcpc@50/connector/ports/port@0/endpoint",
+  "pcf2131": "/soc@0/bus@42000000/i2c@42530000/rtc@53",
+  "lpi2c4": "/soc@0/bus@42000000/i2c@42540000",
+  "lpspi3": "/soc@0/bus@42000000/spi@42550000",
+  "lpspi4": "/soc@0/bus@42000000/spi@42560000",
+  "lpuart3": "/soc@0/bus@42000000/serial@42570000",
+  "lpuart4": "/soc@0/bus@42000000/serial@42580000",
+  "lpuart5": "/soc@0/bus@42000000/serial@42590000",
+  "lpuart6": "/soc@0/bus@42000000/serial@425a0000",
+  "flexcan2": "/soc@0/bus@42000000/can@425b0000",
+  "flexspi1": "/soc@0/bus@42000000/spi@425e0000",
+  "sai2": "/soc@0/bus@42000000/sai@42650000",
+  "sai3": "/soc@0/bus@42000000/sai@42660000",
+  "xcvr": "/soc@0/bus@42000000/xcvr@42680000",
+  "lpuart7": "/soc@0/bus@42000000/serial@42690000",
+  "lpuart8": "/soc@0/bus@42000000/serial@426a0000",
+  "lpi2c5": "/soc@0/bus@42000000/i2c@426b0000",
+  "lpi2c6": "/soc@0/bus@42000000/i2c@426c0000",
+  "lpi2c7": "/soc@0/bus@42000000/i2c@426d0000",
+  "lpi2c8": "/soc@0/bus@42000000/i2c@426e0000",
+  "lpspi5": "/soc@0/bus@42000000/spi@426f0000",
+  "lpspi6": "/soc@0/bus@42000000/spi@42700000",
+  "lpspi7": "/soc@0/bus@42000000/spi@42710000",
+  "lpspi8": "/soc@0/bus@42000000/spi@42720000",
+  "mu2": "/soc@0/bus@42000000/mailbox@42440000",
+  "aips3": "/soc@0/bus@42800000",
+  "usdhc1": "/soc@0/bus@42800000/mmc@42850000",
+  "usdhc2": "/soc@0/bus@42800000/mmc@42860000",
+  "fec": "/soc@0/bus@42800000/ethernet@42890000",
+  "ethphy2": "/soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2",
+  "eqos": "/soc@0/bus@42800000/ethernet@428a0000",
+  "ethphy1": "/soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1",
+  "usdhc3": "/soc@0/bus@42800000/mmc@428b0000",
+  "gpio2": "/soc@0/gpio@43810000",
+  "gpio3": "/soc@0/gpio@43820000",
+  "gpio4": "/soc@0/gpio@43830000",
+  "gpio1": "/soc@0/gpio@47400000",
+  "ocotp": "/soc@0/efuse@47510000",
+  "eth_mac1": "/soc@0/efuse@47510000/mac-address@4ec",
+  "eth_mac2": "/soc@0/efuse@47510000/mac-address@4f2",
+  "s4muap": "/soc@0/mailbox@47520000",
+  "media_blk_ctrl": "/soc@0/system-controller@4ac10000",
+  "dpi_bridge": "/soc@0/system-controller@4ac10000/dpi-bridge",
+  "dpi_from_lcdif": "/soc@0/system-controller@4ac10000/dpi-bridge/ports/port@0/endpoint",
+  "dpi_to_panel": "/soc@0/system-controller@4ac10000/dpi-bridge/ports/port@1/endpoint",
+  "lvds_bridge": "/soc@0/system-controller@4ac10000/bridge@20",
+  "ldb_from_lcdif": "/soc@0/system-controller@4ac10000/bridge@20/ports/port@0/endpoint",
+  "ldb_lvds_ch0": "/soc@0/system-controller@4ac10000/bridge@20/ports/port@1/endpoint",
+  "lcdif": "/soc@0/display-controller@4ae30000",
+  "lcdif_to_dpi": "/soc@0/display-controller@4ae30000/port/endpoint@0",
+  "lcdif_to_ldb": "/soc@0/display-controller@4ae30000/port/endpoint@1",
+  "lcdif_to_dsi": "/soc@0/display-controller@4ae30000/port/endpoint@2",
+  "usbotg1": "/soc@0/usb@4c100000",
+  "usb1_drd_sw": "/soc@0/usb@4c100000/port/endpoint",
+  "usbmisc1": "/soc@0/usbmisc@4c100200",
+  "usbotg2": "/soc@0/usb@4c200000",
+  "usbmisc2": "/soc@0/usbmisc@4c200200",
+  "ddr_pmu": "/soc@0/ddr-pmu@4e300dc0",
+  "cm33": "/remoteproc-cm33",
+  "cpu_alert": "/thermal-zones/cpu-thermal/trips/cpu-alert",
+  "cpu_crit": "/thermal-zones/cpu-thermal/trips/cpu-crit",
+  "sram": "/sram@20480000",
+  "flexcan2_phy": "/can-phy",
+  "reg_usdhc2_vmmc": "/regulator-usdhc2",
+  "reg_usdhc3_vmmc": "/regulator-usdhc3",
+  "rsc_table": "/reserved-memory/rsc-table@2021e000",
+  "vdev0vring0": "/reserved-memory/vdev0vring0@a4000000",
+  "vdev0vring1": "/reserved-memory/vdev0vring1@a4008000",
+  "vdev1vring0": "/reserved-memory/vdev1vring0@a4010000",
+  "vdev1vring1": "/reserved-memory/vdev1vring1@a4018000",
+  "vdevbuffer": "/reserved-memory/vdevbuffer@a4020000",
+  "usdhc3_pwrseq": "/mmc-pwrseq"
+ },
+ "devices": [
+  {
+   "bus": "platform",
+   "name": "",
+   "driver": "(demo)",
+   "of_node": "/"
+  },
+  {
+   "bus": "platform",
+   "name": "cpu-pd-wait",
+   "driver": "(demo)",
+   "of_node": "/cpus/idle-states/cpu-pd-wait"
+  },
+  {
+   "bus": "platform",
+   "name": "cpu@0",
+   "driver": "(demo)",
+   "of_node": "/cpus/cpu@0"
+  },
+  {
+   "bus": "platform",
+   "name": "cpu@100",
+   "driver": "(demo)",
+   "of_node": "/cpus/cpu@100"
+  },
+  {
+   "bus": "platform",
+   "name": "l2-cache-l0",
+   "driver": "(demo)",
+   "of_node": "/cpus/l2-cache-l0"
+  },
+  {
+   "bus": "platform",
+   "name": "l2-cache-l1",
+   "driver": "(demo)",
+   "of_node": "/cpus/l2-cache-l1"
+  },
+  {
+   "bus": "platform",
+   "name": "l3-cache",
+   "driver": "(demo)",
+   "of_node": "/cpus/l3-cache"
+  },
+  {
+   "bus": "platform",
+   "name": "clock-osc-32k",
+   "driver": "(demo)",
+   "of_node": "/clock-osc-32k"
+  },
+  {
+   "bus": "platform",
+   "name": "clock-osc-24m",
+   "driver": "(demo)",
+   "of_node": "/clock-osc-24m"
+  },
+  {
+   "bus": "platform",
+   "name": "clock-ext1",
+   "driver": "(demo)",
+   "of_node": "/clock-ext1"
+  },
+  {
+   "bus": "platform",
+   "name": "pmu",
+   "driver": "(demo)",
+   "of_node": "/pmu"
+  },
+  {
+   "bus": "platform",
+   "name": "psci",
+   "driver": "(demo)",
+   "of_node": "/psci"
+  },
+  {
+   "bus": "platform",
+   "name": "timer",
+   "driver": "(demo)",
+   "of_node": "/timer"
+  },
+  {
+   "bus": "platform",
+   "name": "interrupt-controller@48000000",
+   "driver": "(demo)",
+   "of_node": "/interrupt-controller@48000000"
+  },
+  {
+   "bus": "platform",
+   "name": "mqs1",
+   "driver": "(demo)",
+   "of_node": "/mqs1"
+  },
+  {
+   "bus": "platform",
+   "name": "usbphynop1",
+   "driver": "(demo)",
+   "of_node": "/usbphynop1"
+  },
+  {
+   "bus": "platform",
+   "name": "usbphynop2",
+   "driver": "(demo)",
+   "of_node": "/usbphynop2"
+  },
+  {
+   "bus": "platform",
+   "name": "soc@0",
+   "driver": "(demo)",
+   "of_node": "/soc@0"
+  },
+  {
+   "bus": "platform",
+   "name": "bus@44000000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000"
+  },
+  {
+   "bus": "platform",
+   "name": "dma-controller@44000000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/dma-controller@44000000"
+  },
+  {
+   "bus": "platform",
+   "name": "syscon@44210000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/syscon@44210000"
+  },
+  {
+   "bus": "platform",
+   "name": "timer@44290000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/timer@44290000"
+  },
+  {
+   "bus": "platform",
+   "name": "i2c@44340000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/i2c@44340000"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio@20",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/i2c@44340000/gpio@20"
+  },
+  {
+   "bus": "platform",
+   "name": "i2c@44350000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/i2c@44350000"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio@22",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/i2c@44350000/gpio@22"
+  },
+  {
+   "bus": "platform",
+   "name": "pmic@25",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/i2c@44350000/pmic@25"
+  },
+  {
+   "bus": "platform",
+   "name": "eeprom@50",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/i2c@44350000/eeprom@50"
+  },
+  {
+   "bus": "platform",
+   "name": "serial@44380000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/serial@44380000"
+  },
+  {
+   "bus": "platform",
+   "name": "sai@443b0000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/sai@443b0000"
+  },
+  {
+   "bus": "platform",
+   "name": "pinctrl@443c0000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/pinctrl@443c0000"
+  },
+  {
+   "bus": "platform",
+   "name": "bbnsm@44440000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/bbnsm@44440000"
+  },
+  {
+   "bus": "platform",
+   "name": "rtc",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/bbnsm@44440000/rtc"
+  },
+  {
+   "bus": "platform",
+   "name": "pwrkey",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/bbnsm@44440000/pwrkey"
+  },
+  {
+   "bus": "platform",
+   "name": "clock-controller@44450000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/clock-controller@44450000"
+  },
+  {
+   "bus": "platform",
+   "name": "system-controller@44460000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/system-controller@44460000"
+  },
+  {
+   "bus": "platform",
+   "name": "power-domain@44462400",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/system-controller@44460000/power-domain@44462400"
+  },
+  {
+   "bus": "platform",
+   "name": "power-domain@44461800",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/system-controller@44460000/power-domain@44461800"
+  },
+  {
+   "bus": "platform",
+   "name": "clock-controller@44480000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/clock-controller@44480000"
+  },
+  {
+   "bus": "platform",
+   "name": "adc@44530000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/adc@44530000"
+  },
+  {
+   "bus": "platform",
+   "name": "mailbox@44230000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/mailbox@44230000"
+  },
+  {
+   "bus": "platform",
+   "name": "tmu@44482000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@44000000/tmu@44482000"
+  },
+  {
+   "bus": "platform",
+   "name": "bus@42000000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000"
+  },
+  {
+   "bus": "platform",
+   "name": "dma-controller@42000000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/dma-controller@42000000"
+  },
+  {
+   "bus": "platform",
+   "name": "syscon@42420000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/syscon@42420000"
+  },
+  {
+   "bus": "platform",
+   "name": "watchdog@42490000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/watchdog@42490000"
+  },
+  {
+   "bus": "platform",
+   "name": "i2c@42530000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/i2c@42530000"
+  },
+  {
+   "bus": "platform",
+   "name": "tcpc@50",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/i2c@42530000/tcpc@50"
+  },
+  {
+   "bus": "platform",
+   "name": "connector",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/i2c@42530000/tcpc@50/connector"
+  },
+  {
+   "bus": "platform",
+   "name": "rtc@53",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/i2c@42530000/rtc@53"
+  },
+  {
+   "bus": "platform",
+   "name": "serial@42590000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/serial@42590000"
+  },
+  {
+   "bus": "platform",
+   "name": "bluetooth",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/serial@42590000/bluetooth"
+  },
+  {
+   "bus": "platform",
+   "name": "can@425b0000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42000000/can@425b0000"
+  },
+  {
+   "bus": "platform",
+   "name": "bus@42800000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000"
+  },
+  {
+   "bus": "platform",
+   "name": "mmc@42850000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000/mmc@42850000"
+  },
+  {
+   "bus": "platform",
+   "name": "mmc@42860000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000/mmc@42860000"
+  },
+  {
+   "bus": "platform",
+   "name": "ethernet@42890000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000/ethernet@42890000"
+  },
+  {
+   "bus": "platform",
+   "name": "ethernet@428a0000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000/ethernet@428a0000"
+  },
+  {
+   "bus": "platform",
+   "name": "mdio",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000/ethernet@428a0000/mdio"
+  },
+  {
+   "bus": "platform",
+   "name": "mmc@428b0000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/bus@42800000/mmc@428b0000"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio@43810000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/gpio@43810000"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio@43820000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/gpio@43820000"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio@43830000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/gpio@43830000"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio@47400000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/gpio@47400000"
+  },
+  {
+   "bus": "platform",
+   "name": "efuse@47510000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/efuse@47510000"
+  },
+  {
+   "bus": "platform",
+   "name": "mailbox@47520000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/mailbox@47520000"
+  },
+  {
+   "bus": "platform",
+   "name": "usb@4c100000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/usb@4c100000"
+  },
+  {
+   "bus": "platform",
+   "name": "usbmisc@4c100200",
+   "driver": "(demo)",
+   "of_node": "/soc@0/usbmisc@4c100200"
+  },
+  {
+   "bus": "platform",
+   "name": "usb@4c200000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/usb@4c200000"
+  },
+  {
+   "bus": "platform",
+   "name": "usbmisc@4c200200",
+   "driver": "(demo)",
+   "of_node": "/soc@0/usbmisc@4c200200"
+  },
+  {
+   "bus": "platform",
+   "name": "memory-controller@4e300000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/memory-controller@4e300000"
+  },
+  {
+   "bus": "platform",
+   "name": "ddr-pmu@4e300dc0",
+   "driver": "(demo)",
+   "of_node": "/soc@0/ddr-pmu@4e300dc0"
+  },
+  {
+   "bus": "platform",
+   "name": "npu@4a900000",
+   "driver": "(demo)",
+   "of_node": "/soc@0/npu@4a900000"
+  },
+  {
+   "bus": "platform",
+   "name": "remoteproc-cm33",
+   "driver": "(demo)",
+   "of_node": "/remoteproc-cm33"
+  },
+  {
+   "bus": "platform",
+   "name": "sram@20480000",
+   "driver": "(demo)",
+   "of_node": "/sram@20480000"
+  },
+  {
+   "bus": "platform",
+   "name": "can-phy",
+   "driver": "(demo)",
+   "of_node": "/can-phy"
+  },
+  {
+   "bus": "platform",
+   "name": "gpio-keys",
+   "driver": "(demo)",
+   "of_node": "/gpio-keys"
+  },
+  {
+   "bus": "platform",
+   "name": "regulator-usdhc2",
+   "driver": "(demo)",
+   "of_node": "/regulator-usdhc2"
+  },
+  {
+   "bus": "platform",
+   "name": "regulator-usdhc3",
+   "driver": "(demo)",
+   "of_node": "/regulator-usdhc3"
+  },
+  {
+   "bus": "platform",
+   "name": "linux,cma",
+   "driver": "(demo)",
+   "of_node": "/reserved-memory/linux,cma"
+  },
+  {
+   "bus": "platform",
+   "name": "vdevbuffer@a4020000",
+   "driver": "(demo)",
+   "of_node": "/reserved-memory/vdevbuffer@a4020000"
+  },
+  {
+   "bus": "platform",
+   "name": "sound-mqs",
+   "driver": "(demo)",
+   "of_node": "/sound-mqs"
+  },
+  {
+   "bus": "platform",
+   "name": "mmc-pwrseq",
+   "driver": "(demo)",
+   "of_node": "/mmc-pwrseq"
+  }
+ ],
+ "kconfig": {},
+ "sections": {
+  "dmesg": "",
+  "deferred": "",
+  "usb": "",
+  "alsa_cards": "",
+  "v4l2": "",
+  "input": "",
+  "pinmux": ""
+ },
+ "findings": {
+  "bound": 83,
+  "unbound": [],
+  "no_device": [],
+  "deferred": [],
+  "enabled": 83,
+  "disabled": 43
+ }
+}

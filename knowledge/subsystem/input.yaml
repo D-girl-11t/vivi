@@ -1,0 +1,36 @@
+id: input
+title: Input (events)
+summary: Buttons, keys, rotary encoders, touchscreens. /dev/input/eventN, tool evtest.
+live: {kind: input}
+steps:
+  - id: inputdev
+    layer: subsystem
+    title: "Input device \"{{ dev.input_name or dev.node_name }}\" registered"
+    why: |
+      Input drivers turn hardware activity into **events** (EV_KEY, EV_REL, EV_ABS) on
+      /dev/input/eventN. /proc/bus/input/devices lists every input device, its name and its event node.
+    command: cat /proc/bus/input/devices
+    check: {type: scan, section: input, pattern: 'Name="{{ dev.input_name or dev.node_name }}'}
+  - id: evtest
+    layer: userspace
+    title: "Watch events with evtest"
+    why: evtest prints every event as it happens. Turn the encoder or press the button and you should see values change.
+    command: evtest
+    do: |
+      ```
+      evtest        # pick the device from the list, then move the hardware
+      ```
+    check: {type: manual}
+  - id: app
+    layer: app
+    title: "Consume events from your application"
+    snippet: |
+      # pip install evdev
+      from evdev import InputDevice, list_devices, ecodes
+      dev = next(InputDevice(p) for p in list_devices()
+                 if InputDevice(p).name == "{{ dev.input_name or dev.node_name }}")
+      pos = 0
+      for e in dev.read_loop():
+          if e.type == ecodes.EV_REL: pos += e.value; print("position", pos)
+          if e.type == ecodes.EV_ABS: print("absolute", e.value)
+    check: {type: manual}

@@ -1,0 +1,17 @@
+# Bring-up Studio workspace: edit this, or use the ⚙ button in the UI.
+
+soc: imx93                     # knowledge/soc/<id>.yaml
+
+# Kernel source tree the board runs (NXP linux-imx or mainline) and your board file in it
+kernel_src: /tmp/claude-1000/-home-dhana-dhanaSclaude/a53e42df-6918-4974-9123-977a7bb519bc/scratchpad/linux
+board_dts: arch/arm64/boot/dts/freescale/imx93-11x11-frdm.dts
+
+board:
+  transport: snapshot          # ssh | local | snapshot
+  host: root@192.168.1.50      # for ssh. Set up key login first: ssh-copy-id root@<ip>
+  snapshot: snapshots/demo-imx93-frdm.json   # for offline mode
+
+# How "Open in editor" launches your editor ({path}, {line})
+editor: "code -g {path}:{line}"
+
+peripherals_dir: peripherals

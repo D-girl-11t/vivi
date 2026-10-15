@@ -1,0 +1,38 @@
+id: i2c
+title: I2C
+summary: Two-wire bus (SDA/SCL), devices addressed by a 7-bit address. Sensors, codecs, PMICs, EEPROMs.
+needs_dt: true
+pin_role: i2c            # which soc.padconf entry to use
+form_help:
+  controller: "I2C instance number on the SoC (lpi2c3 -> 3)"
+  reg: "7-bit device address from the datasheet, e.g. 0x68"
+  pins: "SDA and SCL pads. Leave out if the bus is already enabled on the board"
+  irq: "optional interrupt pad, e.g. {pad: GPIO_IO12, type: IRQ_TYPE_EDGE_FALLING}"
+steps:
+  - use: pinmux
+  - use: controller
+  - id: node
+    layer: node
+    title: "Describe {{ dev.name }} at {{ dev.reg_hex }} on &{{ ctrl.label }}"
+    why: |
+      I2C devices can't be discovered automatically, so the kernel only knows a chip
+      exists if a child node under the bus controller says so. `reg` is the 7-bit
+      address, and `compatible` is the string the driver matches on.
+      {%- if binding %} The binding `{{ binding.file }}` lists the required properties: `{{ binding.required|join('`, `') }}`.{% endif %}
+    do: |
+      Put this child node **inside** the `&{{ ctrl.label }} { ... }` block.
+      Tip: on the board, run `i2cdetect -y -r <bus>` to confirm the chip answers at {{ dev.reg_hex }} before blaming the driver.
+    file: board
+    anchor: "&{{ ctrl.label }}"
+    snippet: |
+      {{ dev.label }}: {{ dev.node_name }}@{{ dev.reg_hex[2:] }} {
+      	compatible = "{{ dev.compatible }}";
+      	reg = <{{ dev.reg_hex }}>;
+      {%- if irq %}
+      	interrupt-parent = <&{{ irq.gpio.controller }}>;
+      	interrupts = <{{ irq.gpio.line }} {{ irq.type }}>;
+      {%- endif %}
+      {{ dev.properties | tabs(1) }}
+      };
+    examples: {compatible: "{{ dev.compatible }}"}
+    check: {type: source_compatible, compatible: "{{ dev.compatible }}"}

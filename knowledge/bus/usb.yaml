@@ -1,0 +1,36 @@
+id: usb
+title: USB device
+summary: Self-describing bus. The device tells the host what it is, so usually no device-tree node is needed.
+needs_dt: false
+form_help:
+  controller: "USB controller instance the port is wired to (usbotg2 -> 2)"
+  usb_id: "optional vendor:product, e.g. 046d:0825 (run lsusb)"
+  driver: "kernel driver name, e.g. uvcvideo, snd-usb-audio, cdc_acm, ftdi_sio"
+  config: "CONFIG_ symbol of that driver, e.g. CONFIG_USB_VIDEO_CLASS"
+steps:
+  - use: controller
+    title: "Make sure &{{ ctrl.label }} is enabled in host mode"
+    why: |
+      USB devices describe themselves (vendor/product ID, class), so you don't add a node per
+      device. The **port** still needs its controller enabled in the device tree, and set to
+      `host` (or `otg` with a working ID pin or Type-C controller) so it powers and enumerates devices.
+      Right now **&{{ ctrl.label }}** is **{{ ctrl.status or 'not found' }}**.
+    snippet: |
+      &{{ ctrl.label }} {
+      {{ snip.controller_extra | tabs(1) }}
+      	status = "okay";
+      };
+  - id: enumerate
+    layer: node
+    title: "Plug it in and check it enumerates"
+    why: |
+      Enumeration is the USB version of "the node exists". The host reads the device's
+      descriptors, and the device appears in /sys/bus/usb/devices with its ID. If it doesn't
+      show up here, look at the cable, power or controller mode, not the driver.
+    do: |
+      ```
+      lsusb
+      dmesg | tail -20      # look for "New USB device found, idVendor=..."
+      ```
+    command: lsusb
+    check: {type: scan, section: usb, pattern: "{{ dev.usb_id or '' }}"}   # empty pattern -> you confirm by hand

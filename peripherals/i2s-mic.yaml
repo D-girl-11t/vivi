@@ -1,0 +1,16 @@
+# I2S MEMS microphone (e.g. ICS-43434) on SAI3.
+# EXAMPLE PADS: replace them with the pads your mic is actually wired to (schematic / header pinout).
+name: i2s-mic
+description: I2S MEMS mic, SoC is clock master
+bus: sai
+subsystem: alsa
+compatible: invensense,ics43432     # mainline driver for ICS-43432/43434-style mics
+card_name: mic
+format: i2s
+connection:
+  controller: 3                     # SAI3
+  pins:
+    - {pad: GPIO_IO16, function: SAI3_TX_BCLK}   # BCLK  -> mic SCK
+    - {pad: GPIO_IO26, function: SAI3_TX_SYNC}   # LRCLK -> mic WS
+    - {pad: GPIO_IO20, function: SAI3_RX_DATA00} # DATA  <- mic SD
+goal: record 48 kHz audio with arecord and stream it into my app

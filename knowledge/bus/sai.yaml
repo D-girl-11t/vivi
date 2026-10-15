@@ -1,0 +1,67 @@
+id: sai
+title: I2S / SAI (digital audio)
+summary: Serial audio (BCLK, LRCLK/FS, DATA, optional MCLK). Mics, DACs, codecs, amplifiers.
+needs_dt: true
+pin_role: sai
+# extra drivers needed besides the codec: the controller is added automatically
+kconfig_compatibles: [simple-audio-card]
+probe_compatibles: [simple-audio-card]
+form_help:
+  controller: "SAI instance number (sai3 -> 3)"
+  pins: "BCLK, SYNC (LRCLK), RX_DATA (mic) / TX_DATA (speaker), optional MCLK"
+  format: "i2s (default), left_j, right_j, dsp_a"
+  codec_ref: "label of a codec you described separately (e.g. an I2C codec); otherwise a root codec node is created from `compatible`"
+steps:
+  - use: pinmux
+  - use: controller
+  - id: codec
+    layer: node
+    when: not dev.codec_ref
+    title: "Describe the codec/mic: {{ dev.compatible }}"
+    why: |
+      In ALSA SoC (ASoC), a sound card is built from three parts: the **CPU DAI** (the SAI
+      controller), the **codec DAI** (your mic, DAC or codec chip) and a **machine/card**
+      that links them. Simple I2S parts with no control bus (like MEMS mics) get a plain node at
+      the root with `#sound-dai-cells` so the card can point to them.
+    do: Put this inside the root `/ { ... }` block.
+    file: board
+    anchor: "/"
+    snippet: |
+      {{ dev.label }}: {{ dev.node_name }} {
+      	compatible = "{{ dev.compatible }}";
+      	#sound-dai-cells = <0>;
+      {{ dev.properties | tabs(1) }}
+      };
+    examples: {compatible: "{{ dev.compatible }}"}
+    check: {type: source_compatible, compatible: "{{ dev.compatible }}"}
+  - id: card
+    layer: node
+    title: "Link SAI and codec into a sound card"
+    why: |
+      `simple-audio-card` is the generic ASoC machine driver. It joins
+      `&{{ ctrl.label }}` (CPU DAI) with `&{{ dev.codec_ref or dev.label }}` (codec DAI) and sets the
+      wire format. The **bitclock/frame master** decides who drives BCLK and LRCLK: a MEMS
+      mic is always a slave, so the SoC (cpu) must be the master.
+    do: |
+      Put this inside the root `/ { ... }` block. After boot it shows up as an ALSA card named
+      "{{ dev.card_name }}".
+    file: board
+    anchor: "/"
+    snippet: |
+      sound-{{ dev.slug }} {
+      	compatible = "simple-audio-card";
+      	simple-audio-card,name = "{{ dev.card_name }}";
+      	simple-audio-card,format = "{{ dev.format|default('i2s') }}";
+      	simple-audio-card,bitclock-master = <&{{ dev.label }}_cpu>;
+      	simple-audio-card,frame-master = <&{{ dev.label }}_cpu>;
+
+      	{{ dev.label }}_cpu: simple-audio-card,cpu {
+      		sound-dai = <&{{ ctrl.label }}>;
+      	};
+
+      	simple-audio-card,codec {
+      		sound-dai = <&{{ dev.codec_ref or dev.label }}>;
+      	};
+      };
+    examples: {compatible: simple-audio-card}
+    check: {type: source_text, pattern: 'simple-audio-card,name\s*=\s*"{{ dev.card_name }}"'}

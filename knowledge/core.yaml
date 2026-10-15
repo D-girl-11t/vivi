@@ -1,0 +1,160 @@
+# The generic ladder. Every peripheral, on every SoC, goes through these layers.
+# Bus templates fill in pinmux/controller/node, subsystem templates fill in
+# subsystem/userspace/app. The steps below are shared by all of them.
+layers:
+  - {id: hardware,   title: Hardware,     eli5: "Which wires is the toy plugged into?"}
+  - {id: pinmux,     title: Pinmux,       eli5: "Set the socket to the right shape"}
+  - {id: controller, title: Controller,   eli5: "Switch on the room the socket is in"}
+  - {id: node,       title: Device node,  eli5: "Tell the house what toy is there"}
+  - {id: kconfig,    title: Kernel config,eli5: "Make sure the instruction book is in the library"}
+  - {id: deploy,     title: Deploy,       eli5: "Give the house its new map"}
+  - {id: probe,      title: Probe,        eli5: "Did the book get matched to the toy?"}
+  - {id: subsystem,  title: Subsystem,    eli5: "Is the toy in the right toy box?"}
+  - {id: userspace,  title: Userspace,    eli5: "Play with it using standard tools"}
+  - {id: app,        title: App,          eli5: "Use it from your own program"}
+
+before_bus:
+  - id: hardware
+    layer: hardware
+    title: "Know the wires for {{ dev.name }}"
+    why: |
+      Software can't fix a wiring mistake, and a wrong guess about pins causes the
+      worst kind of bug: everything compiles and nothing happens. Before touching
+      any file, confirm against the schematic and datasheet:
+
+      * which SoC pads the signals land on, and whether a header or level shifter is in between
+      * the IO voltage on both sides (the i.MX93 GPIO bank voltage vs. the device's)
+      * pull-ups (I2C needs them), and whether reset/enable pins need driving
+      * that no other function on the board already uses these pads (checked below)
+    do: |
+      {%- if pins %}
+      Pads in your form:
+      {% for p in pins %}
+      * **{{ p.pad }}** → `{{ p.function or '?' }}`{% if not p.macro and soc.pins.header %} ⚠ no matching mux found{% endif %}{% if p.options and not p.macro %}. Options: {{ p.options|join(', ') }}{% endif %}
+      {%- endfor %}
+      {%- endif %}
+      {%- if binding %}
+
+      Binding **{{ binding.file }}** requires: `{{ binding.required|join('`, `') }}`
+      {%- endif %}
+    check: {type: pads_free}
+
+after_bus:
+  - id: kconfig
+    layer: kconfig
+    title: "Enable the driver{{ 's' if kconfig|length > 1 else '' }} in the kernel config"
+    why: |
+      A device-tree node only describes hardware. A driver must be built into
+      the kernel (`=y`) or as a module (`=m`) and claim the node by its
+      `compatible` string. The lookup below followed
+      compatible → driver source file → Makefile → CONFIG_ symbol
+      in **your** kernel tree.
+    do: |
+      {%- for k in kconfig %}
+      * `{{ k.symbol }}`{% if k.prompt %}, "{{ k.prompt }}"{% endif %}{% if k.via %}, needed for {{ k.via }}{% endif %}{% if k.file %} (driver `{{ k.file }}`){% endif %}{% if k.depends %}<br>depends on: `{{ k.depends|join('` and `') }}`{% endif %}
+      {%- endfor %}
+      {%- if not kconfig %}
+      No driver could be found automatically. Set `config:` in the peripheral form.
+      {%- endif %}
+
+      Run `make menuconfig`, press `/` and search for each symbol to see where it lives
+      and what it depends on. With Yocto, add a config fragment instead of editing .config.
+    command: "{% for k in kconfig %}zcat /proc/config.gz | grep {{ k.symbol }}={% if not loop.last %} ; {% endif %}{% endfor %}"
+    check: {type: kconfig}      # checks every symbol listed above against /proc/config.gz
+
+  - id: deploy
+    layer: deploy
+    when: bus.needs_dt
+    title: "Build the .dtb and boot the board with it"
+    why: |
+      Your edits live in the source tree, but the kernel only sees the compiled
+      .dtb that the bootloader hands it. This check reads the **live** device tree
+      (/sys/firmware/devicetree) on the board, so it only passes once the new .dtb
+      has actually booted. It catches the classic mistake of "I edited it, but
+      the board still boots the old dtb".
+    do: |
+      ```
+      {{ deploy.build_dtb }}
+      {{ deploy.install_dtb }}
+      ```
+      {{ deploy.install_hint }}
+      Then reboot and press **Rescan board**.
+    command: "{{ deploy.build_dtb }}"
+    check: {type: dt_live, compatible: "{{ dev.compatible or '' }}", label: "{{ ctrl.label if not dev.compatible else '' }}"}
+
+  - id: probe
+    layer: probe
+    title: "Check the driver bound (probed) to the device"
+    why: |
+      At boot the kernel walks the device tree, creates a device for each enabled
+      node, and calls `probe()` on the driver whose `compatible` matches. Probe can:
+
+      * **succeed**: the device appears under its driver in /sys
+      * **defer**: something it needs (clock, GPIO, regulator, codec) isn't ready yet, so it retries later. Stuck deferrals are listed in /sys/kernel/debug/devices_deferred
+      * **fail**: the error is in dmesg, usually a missing property, a wrong address or no ACK on the bus
+    do: |
+      Look at dmesg for the driver name:
+      ```
+      dmesg | grep -i {{ driver.name if driver else (dev.driver or dev.label) }}
+      ls -l /sys/bus/*/drivers/{{ driver.name if driver else (dev.driver or '<driver>') }}/
+      ```
+    command: "dmesg | grep -i {{ driver.name if driver else (dev.driver or dev.label) }}"
+    check: {type: probe}        # node(s) with our compatible have a driver bound
+
+# Reusable steps. Bus templates pull these in with `- use: pinmux` and can
+# override any field.
+common:
+  pinmux:
+    id: pinmux
+    layer: pinmux
+    when: pins
+    title: "Mux {{ pins|map(attribute='pad')|join(', ') }} for {{ dev.name }}"
+    why: |
+      Each SoC pad can carry one of several signals (GPIO, I2C, SPI, SAI and others),
+      and the pin controller decides which one. Until the pad is muxed, the
+      peripheral's signals don't reach the outside world, even with the controller
+      enabled. Pad settings (pull, drive strength, open-drain) are set in the same place.
+    do: |
+      Add this group inside the `{{ soc.pins.pinctrl_parent }} { ... }` block{% if anchor.line %} (board file, line {{ anchor.line }}){% endif %}.
+      {%- if soc.pins.header %}
+      The mux names were looked up in `{{ soc.pins.header }}`, not guessed. The pad
+      values are the defaults NXP uses for this kind of signal; check the SW_PAD_CTL register in the RM if the signals look bad on a scope.
+      {%- endif %}
+      {%- for p in pins if not p.macro and soc.pins.header %}
+
+      ⚠ **{{ p.pad }}**: no `{{ p.wanted or 'matching' }}` function. This pad can be: {{ p.options|join(', ') }}
+      {%- endfor %}
+    file: board
+    anchor: "{{ soc.pins.pinctrl_parent }}"
+    snippet: "{{ snip.pinctrl_group }}"
+    check: {type: pins_muxed}
+
+  controller:
+    id: controller
+    layer: controller
+    when: ctrl.label
+    title: "Enable &{{ ctrl.label }}"
+    why: |
+      The SoC .dtsi describes every controller on the chip but leaves most of them
+      `status = "disabled"`, because only the board knows which ones are wired out.
+      The board file switches on the ones it uses and attaches their pinctrl group.
+
+      Right now **&{{ ctrl.label }}** is **{{ ctrl.status or 'not found' }}**{% if ctrl.status_set_at %}, set at {{ ctrl.status_set_at.file }}:{{ ctrl.status_set_at.line }}{% endif %}.
+      {%- if ctrl.compatible %} It is a `{{ ctrl.compatible }}` controller.{% endif %}
+    do: |
+      {%- if anchor.exists %}
+      Your board file already has a `&{{ ctrl.label }}` block at line {{ anchor.line }}. Make sure it contains the lines below.
+      {%- else %}
+      Add a new top-level `&{{ ctrl.label }}` block to the board file (order the blocks alphabetically, as the kernel style does).
+      {%- endif %}
+      Compare with the **examples from other boards** below; they show which clock and DMA properties this controller usually needs on this SoC.
+    file: board
+    anchor: "&{{ ctrl.label }}"
+    snippet: |
+      &{{ ctrl.label }} {
+      {{ snip.pinctrl_props | tabs(1) if pins else '' }}
+      {{ snip.controller_extra | tabs(1) }}
+      	status = "okay";
+      };
+    examples: {label: "{{ ctrl.label }}"}
+    check: {type: source_status, label: "{{ ctrl.label }}", expect: okay}

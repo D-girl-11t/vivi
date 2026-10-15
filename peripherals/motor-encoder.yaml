@@ -1,0 +1,19 @@
+# Quadrature motor encoder (A/B channels) on two GPIOs.
+# The rotary-encoder driver works for slow encoders (knobs, slow motors). For a fast motor,
+# offload counting to the Cortex-M33 (see the SoC profile's coprocessor notes).
+# EXAMPLE PADS: replace them with your wiring.
+name: motor-encoder
+description: A/B quadrature encoder, read as relative steps
+bus: gpio
+subsystem: input
+compatible: rotary-encoder
+node_name: encoder
+connection:
+  pins:
+    - {pad: GPIO_IO04}          # channel A
+    - {pad: GPIO_IO05}          # channel B
+properties: |
+  linux,axis = <0>;             /* REL_X */
+  rotary-encoder,relative-axis;
+  rotary-encoder,steps-per-period = <4>;
+goal: read position/speed of the motor shaft

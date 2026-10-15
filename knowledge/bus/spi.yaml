@@ -1,0 +1,37 @@
+id: spi
+title: SPI
+summary: Four-wire full-duplex bus (SCK/MOSI/MISO/CS). IMUs, ADCs, displays, flash.
+needs_dt: true
+pin_role: spi
+form_help:
+  controller: "SPI instance number (lpspi3 -> 3)"
+  reg: "chip-select index, usually 0"
+  pins: "SCK, SIN (MISO), SOUT (MOSI), PCS0 pads"
+  max_hz: "maximum SPI clock from the datasheet"
+steps:
+  - use: pinmux
+  - use: controller
+  - id: node
+    layer: node
+    title: "Describe {{ dev.name }} on &{{ ctrl.label }} chip-select {{ dev.connection.reg|default(0) }}"
+    why: |
+      Like I2C, SPI can't be enumerated, so the device needs a child node. `reg` is the chip-select
+      number and `spi-max-frequency` caps the clock for this device. Some chips also need
+      `spi-cpol`/`spi-cpha` to set the SPI mode; check the datasheet's timing diagram.
+      {%- if binding %} Binding `{{ binding.file }}` requires: `{{ binding.required|join('`, `') }}`.{% endif %}
+    do: Put this child node **inside** the `&{{ ctrl.label }} { ... }` block.
+    file: board
+    anchor: "&{{ ctrl.label }}"
+    snippet: |
+      {{ dev.label }}: {{ dev.node_name }}@{{ dev.connection.reg|default(0) }} {
+      	compatible = "{{ dev.compatible }}";
+      	reg = <{{ dev.connection.reg|default(0) }}>;
+      	spi-max-frequency = <{{ dev.connection.max_hz|default(1000000) }}>;
+      {%- if irq %}
+      	interrupt-parent = <&{{ irq.gpio.controller }}>;
+      	interrupts = <{{ irq.gpio.line }} {{ irq.type }}>;
+      {%- endif %}
+      {{ dev.properties | tabs(1) }}
+      };
+    examples: {compatible: "{{ dev.compatible }}"}
+    check: {type: source_compatible, compatible: "{{ dev.compatible }}"}

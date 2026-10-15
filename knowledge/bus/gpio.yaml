@@ -1,0 +1,50 @@
+id: gpio
+title: GPIO-based device
+summary: Device driven by plain GPIO lines, such as encoders, buttons, LEDs, relays or pulse counters.
+needs_dt: true
+pin_role: gpio
+form_help:
+  pins: "the GPIO pads, in the order the binding expects (e.g. encoder A then B)"
+  gpio_property: "property name for the GPIO list, default 'gpios' (check the binding)"
+  flags: "per pin: GPIO_ACTIVE_HIGH (default) or GPIO_ACTIVE_LOW"
+steps:
+  - use: pinmux
+    why: |
+      To use a pad as a GPIO, mux it to its GPIOx_IOyy function. The function name
+      also tells you which GPIO controller and line number Linux uses
+      ({% for p in pins %}{{ p.pad }} → {{ p.gpio.controller if p.gpio else '?' }} line {{ p.gpio.line if p.gpio else '?' }}{{ ', ' if not loop.last }}{% endfor %}).
+  - use: controller
+    title: "Make sure GPIO controller{{ 's' if gpio_ctrls|length > 1 }} {{ gpio_ctrls|join(', ') }} {{ 'are' if gpio_ctrls|length > 1 else 'is' }} enabled"
+    why: |
+      The device node will reference lines like `<&{{ ctrl.label }} 8 GPIO_ACTIVE_HIGH>`. That only
+      works if the GPIO controller itself is enabled. On most boards it already is, so this step
+      usually passes straight away.
+    snippet: ""
+    examples: {}
+  - id: node
+    layer: node
+    title: "Add the {{ dev.node_name }} node at the root"
+    why: |
+      GPIO-based devices don't sit on a bus, so they get a node at the root (`/ { ... }`).
+      The node lists its GPIO lines and its own pinctrl group, so the pads are muxed when the driver probes.
+      {%- if binding %} Binding `{{ binding.file }}` requires: `{{ binding.required|join('`, `') }}`.{% endif %}
+    do: |
+      Put this node inside the root `/ { ... }` block of the board file{% if anchor.line %} (line {{ anchor.line }}){% endif %}.
+      {%- if binding and binding.properties %}
+
+      Other properties this binding accepts:
+      {%- for k, v in binding.properties.items() if k not in ('compatible',) %}
+      * `{{ k }}`{% if v %}: {{ v }}{% endif %}
+      {%- endfor %}
+      {%- endif %}
+    file: board
+    anchor: "/"
+    snippet: |
+      {{ dev.label }}: {{ dev.node_name }} {
+      	compatible = "{{ dev.compatible }}";
+      {{ snip.pinctrl_props | tabs(1) }}
+      	{{ dev.gpio_property|default('gpios') }} = {% for p in pins %}<&{{ p.gpio.controller if p.gpio else '?' }} {{ p.gpio.line if p.gpio else '?' }} {{ p.flags or 'GPIO_ACTIVE_HIGH' }}>{{ ', ' if not loop.last else ';' }}{% endfor %}
+      {{ dev.properties | tabs(1) }}
+      };
+    examples: {compatible: "{{ dev.compatible }}"}
+    check: {type: source_compatible, compatible: "{{ dev.compatible }}"}

@@ -1,0 +1,35 @@
+id: iio
+title: IIO (sensors, ADC/DAC)
+summary: Industrial I/O, covering accelerometers, gyros, ADCs, pressure and light sensors. /sys/bus/iio/devices.
+live: {kind: sysfs, hint: "/sys/bus/iio/devices/iio:device0/in_accel_x_raw"}
+steps:
+  - id: iiodev
+    layer: subsystem
+    title: "iio:device registered"
+    why: |
+      IIO drivers expose each measurement as a sysfs channel: `in_<type>_<axis>_raw` plus
+      `_scale` and `_offset`. The real value is (raw + offset) * scale.
+    command: "grep . /sys/bus/iio/devices/*/name"
+    check: {type: scan, section: iio, pattern: "{{ dev.iio_name or dev.node_name }}"}
+  - id: read
+    layer: userspace
+    title: "Read raw channels"
+    why: Reading sysfs directly is the quickest proof that the device answers. For high rates, use the buffered interface (/dev/iio:deviceN + triggers).
+    do: |
+      ```
+      cd /sys/bus/iio/devices/iio:device0 && grep . name in_*
+      ```
+      Plot a channel live in the **Live** tab.
+    command: "cd /sys/bus/iio/devices/iio:device0 && grep . name in_*"
+    check: {type: manual}
+  - id: app
+    layer: app
+    title: "Read the sensor from your application"
+    snippet: |
+      import glob, time
+      dev = next(d for d in glob.glob("/sys/bus/iio/devices/iio:device*")
+                 if open(d + "/name").read().strip() == "{{ dev.iio_name or dev.node_name }}")
+      rd = lambda f: float(open(f"{dev}/{f}").read())
+      while True:
+          print(rd("in_accel_x_raw") * rd("in_accel_scale")); time.sleep(0.1)
+    check: {type: manual}

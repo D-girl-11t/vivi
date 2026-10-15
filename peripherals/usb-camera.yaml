@@ -1,0 +1,11 @@
+# USB webcam (UVC). USB describes itself, so no device-tree node is needed for the camera.
+name: usb-camera
+description: USB UVC webcam on the FRDM USB host port
+bus: usb
+subsystem: v4l2
+connection:
+  controller: 2          # usbotg2 is the FRDM's host port (check your board: which port is the camera in?)
+driver: uvcvideo
+config: CONFIG_USB_VIDEO_CLASS
+# usb_id: "046d:0825"    # fill in from `lsusb` to make the enumerate check automatic
+goal: capture 640x480 frames with OpenCV

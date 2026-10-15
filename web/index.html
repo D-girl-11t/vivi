@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bring-up Studio</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">⚡ Bring-up Studio</div>
+  <div id="chips"></div>
+  <div class="spacer"></div>
+  <button id="btn-scan" title="Read the board's live state over ssh">⟳ Rescan board</button>
+  <button id="btn-reload-src" title="Re-read source files after you edit them">↻ Reload source</button>
+  <button id="btn-settings" title="Edit workspace.yaml">⚙</button>
+</header>
+
+<main id="layout">
+  <!-- LEFT: what exists -->
+  <aside id="left" class="panel">
+    <nav class="tabs" data-for="left">
+      <button data-tab="board" class="active">Board</button>
+      <button data-tab="source">Source</button>
+      <button data-tab="pins">Pins</button>
+    </nav>
+    <div class="tabbody" id="left-board"></div>
+    <div class="tabbody hidden" id="left-source"></div>
+    <div class="tabbody hidden" id="left-pins">
+      <input id="pin-q" placeholder="pad or function, e.g. GPIO_IO08 or SAI3" autocomplete="off">
+      <div id="pin-results" class="muted small">Every function a pad can carry, read from the SoC pin header, and whether your board already uses that pad.</div>
+    </div>
+  </aside>
+
+  <!-- CENTER: workspace -->
+  <section id="center" class="panel">
+    <nav class="tabs" data-for="center" id="center-tabs">
+      <button data-tab="view" class="active">Viewer</button>
+      <button data-tab="live">Live</button>
+    </nav>
+    <div class="tabbody" id="center-view">
+      <div id="view-head"></div>
+      <div id="view-body"><div class="empty">
+        <h2>How to use this</h2>
+        <ol>
+          <li>Pick a peripheral on the right (or create one with <b>＋</b>).</li>
+          <li>The guide shows every bring-up layer. The <span class="pill cur">current</span> step is the first one that isn't green.</li>
+          <li>Open a step: read <b>why</b>, click the file link, make the change in your editor, press <b>Check</b>.</li>
+          <li>After deploying to the board, press <b>Rescan board</b> so board-side checks update.</li>
+        </ol>
+        <p class="muted">Left side: what exists (live board, source tree, pins). Right side: what to do next.</p>
+      </div></div>
+    </div>
+    <div class="tabbody hidden" id="center-live">
+      <div class="live-ctl">
+        <input id="live-paths" placeholder="/sys/bus/iio/devices/iio:device0/in_accel_x_raw, /sys/...">
+        <label>Hz <input id="live-hz" type="number" value="10" min="1" max="50"></label>
+        <button id="live-start">▶ Start</button>
+        <button id="live-stop">■ Stop</button>
+      </div>
+      <div id="live-note" class="muted small"></div>
+      <canvas id="live-canvas"></canvas>
+      <div id="live-values"></div>
+    </div>
+  </section>
+
+  <!-- RIGHT: guide -->
+  <aside id="right" class="panel">
+    <div class="guide-head">
+      <select id="periph-select"></select>
+      <button id="btn-new" title="New peripheral form">＋</button>
+      <button id="btn-form" title="Edit this peripheral's form">✎ Form</button>
+    </div>
+    <div id="ladder"></div>
+    <div id="plan-summary"></div>
+    <div id="steps"></div>
+  </aside>
+</main>
+<div id="toast"></div>
+<script src="/web/app.js"></script>
+</body>
+</html>

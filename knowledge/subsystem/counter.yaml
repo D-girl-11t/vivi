@@ -1,0 +1,31 @@
+id: counter
+title: Counter
+summary: Generic counter subsystem for pulse counters and quadrature decoders. /sys/bus/counter/devices.
+live: {kind: sysfs, hint: "/sys/bus/counter/devices/counter0/count0/count"}
+steps:
+  - id: counterdev
+    layer: subsystem
+    title: "Counter device registered"
+    why: |
+      The counter subsystem models **Signals** (input lines), **Synapses** (how a signal edge
+      changes a count) and **Counts**. It's the right home for encoders when you need the actual count, not input events.
+    command: "grep . /sys/bus/counter/devices/*/name"
+    check: {type: scan, section: counter, pattern: "."}
+  - id: read
+    layer: userspace
+    title: "Read the count"
+    command: "cat /sys/bus/counter/devices/counter0/count0/count"
+    why: Spin the motor and read again; the value should change. Plot it in the **Live** tab to see speed as slope.
+    check: {type: manual}
+  - id: app
+    layer: app
+    title: "Compute speed in your application"
+    snippet: |
+      import time
+      f = "/sys/bus/counter/devices/counter0/count0/count"
+      last, t0 = int(open(f).read()), time.time()
+      while True:
+          time.sleep(0.1)
+          c, t = int(open(f).read()), time.time()
+          print("counts/s", (c - last) / (t - t0)); last, t0 = c, t
+    check: {type: manual}

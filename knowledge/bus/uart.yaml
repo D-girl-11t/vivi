@@ -1,0 +1,28 @@
+id: uart
+title: UART
+summary: Asynchronous serial (TX/RX, optional RTS/CTS). GPS, modems, BLE modules, other MCUs.
+needs_dt: true
+pin_role: uart
+form_help:
+  controller: "UART instance (lpuart5 -> 5)"
+  pins: "TX, RX (and RTS/CTS if used)"
+  compatible: "optional. Only for serdev devices (BT chips and similar); leave empty for a plain /dev/tty"
+steps:
+  - use: pinmux
+  - use: controller
+  - id: node
+    layer: node
+    when: dev.compatible
+    title: "Describe {{ dev.name }} as a serdev child"
+    why: |
+      Most UART peripherals need no node: you open /dev/ttyXXX from userspace. Some
+      drivers (Bluetooth, GNSS) use **serdev** and need a child node under the UART.
+    do: Put this inside the `&{{ ctrl.label }} { ... }` block.
+    file: board
+    anchor: "&{{ ctrl.label }}"
+    snippet: |
+      {{ dev.label }}: {{ dev.node_name }} {
+      	compatible = "{{ dev.compatible }}";
+      {{ dev.properties | tabs(1) }}
+      };
+    check: {type: source_compatible, compatible: "{{ dev.compatible }}"}

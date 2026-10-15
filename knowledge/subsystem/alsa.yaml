@@ -1,0 +1,44 @@
+id: alsa
+title: ALSA (audio)
+summary: Sound cards, PCM capture/playback. /dev/snd/*, tools arecord/aplay.
+live: {kind: audio}
+steps:
+  - id: card
+    layer: subsystem
+    title: "Sound card \"{{ dev.card_name }}\" registered"
+    why: |
+      When the machine driver (simple-audio-card), the CPU DAI and the codec have **all** probed,
+      ASoC registers one ALSA card. If any part is missing, the card silently never appears, so check
+      the probe step first. A card stuck waiting is often listed as deferred.
+    command: cat /proc/asound/cards
+    check: {type: scan, section: alsa_cards, pattern: "{{ dev.card_name }}"}
+  - id: record
+    layer: userspace
+    title: "Record 5 seconds with arecord"
+    why: |
+      arecord talks straight to the ALSA PCM device, with no PulseAudio/PipeWire in between.
+      If this works, the driver stack is correct. I2S MEMS mics usually deliver 24-bit samples in
+      32-bit slots (`S32_LE`), on the left or right channel depending on their L/R pin.
+    command: "arecord -D hw:CARD={{ dev.card_name|replace(' ', '') }},DEV=0 -f S32_LE -r 48000 -c 2 -d 5 /tmp/{{ dev.label }}.wav && ls -l /tmp/{{ dev.label }}.wav"
+    do: |
+      ```
+      arecord -l
+      {{ step_command }}
+      ```
+      Copy the wav to your PC and listen, or look at it in the **Live** tab.
+    check: {type: board_cmd, cmd: "arecord -l", expect: "{{ dev.card_name }}"}
+  - id: app
+    layer: app
+    title: "Read audio from your application"
+    why: Apps use the same ALSA PCM interface, through alsa-lib (C), pyalsaaudio, GStreamer (`alsasrc`) or PipeWire on top.
+    snippet: |
+      # Python, streaming PCM frames through arecord (no extra packages)
+      import subprocess, struct
+      p = subprocess.Popen(["arecord", "-D", "hw:CARD={{ dev.card_name|replace(' ', '') }},DEV=0",
+                            "-f", "S32_LE", "-r", "48000", "-c", "2", "-t", "raw"],
+                           stdout=subprocess.PIPE)
+      while True:
+          buf = p.stdout.read(48000 // 10 * 8)          # 100 ms, 2ch x 4 bytes
+          left = struct.unpack_from("<%di" % (len(buf) // 4), buf)[0::2]
+          print("peak", max(abs(s) for s in left) >> 8)
+    check: {type: manual}

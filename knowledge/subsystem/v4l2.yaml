@@ -1,0 +1,39 @@
+id: v4l2
+title: V4L2 (video)
+summary: Cameras and video devices, /dev/videoN. Tools v4l2-ctl, gst-launch-1.0.
+live: {kind: video}
+steps:
+  - id: videodev
+    layer: subsystem
+    title: "/dev/video device created"
+    why: |
+      A V4L2 driver registers a `video_device`, which appears as /dev/videoN with a name in
+      /sys/class/video4linux. UVC cameras often create **two** nodes: one for frames, one for metadata.
+    command: v4l2-ctl --list-devices
+    check: {type: scan, section: v4l2, pattern: "{{ dev.v4l2_name or '.' }}"}
+  - id: formats
+    layer: userspace
+    title: "List formats and grab a frame"
+    why: |
+      A camera only offers specific pixel formats and resolutions (YUYV, MJPEG and so on). Your app has to ask
+      for one of them. Grabbing one frame proves streaming and DMA work, not just enumeration.
+    do: |
+      ```
+      v4l2-ctl -d /dev/video0 --list-formats-ext
+      v4l2-ctl -d /dev/video0 --set-fmt-video=width=640,height=480 --stream-mmap --stream-count=1 --stream-to=/tmp/frame.raw
+      ```
+    command: v4l2-ctl -d /dev/video0 --list-formats-ext
+    check: {type: board_cmd, cmd: "v4l2-ctl --list-devices", expect: "/dev/video"}
+  - id: app
+    layer: app
+    title: "Capture frames from your application"
+    why: OpenCV, GStreamer and libcamera all sit on top of the same V4L2 ioctls.
+    snippet: |
+      # Python + OpenCV (V4L2 backend)
+      import cv2
+      cap = cv2.VideoCapture("/dev/video0", cv2.CAP_V4L2)
+      cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640); cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+      ok, frame = cap.read()
+      print(ok, frame.shape if ok else None)
+      # or GStreamer: gst-launch-1.0 v4l2src device=/dev/video0 ! videoconvert ! autovideosink
+    check: {type: manual}

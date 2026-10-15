@@ -1,0 +1,12 @@
+id: other
+title: Other / custom
+summary: No standard subsystem. Use sysfs, a character device, or write your own driver.
+steps:
+  - id: verify
+    layer: userspace
+    title: "Verify from userspace"
+    why: |
+      If no subsystem fits, the driver usually exposes sysfs attributes or a character
+      device. If **no driver exists** at all, this is where you write one. Start from the closest
+      driver in the same subsystem and copy its probe() structure.
+    check: {type: manual}

@@ -1,0 +1,16 @@
+id: tty
+title: TTY (serial)
+summary: Serial ports, /dev/ttyXXX. Tools stty, picocom, minicom.
+steps:
+  - id: ttydev
+    layer: subsystem
+    title: "Serial port device node exists"
+    why: Each enabled UART becomes a /dev/tty device, named by the driver (ttyLP* on i.MX, ttySTM* on STM32), and numbered by `aliases { serialN = ... }` in the DT.
+    command: "ls -l /dev/ttyLP* /dev/ttySTM* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null"
+    check: {type: board_cmd, cmd: "ls /dev/ | grep -E '^tty(LP|STM|USB|ACM)'", expect: "tty"}
+  - id: loop
+    layer: userspace
+    title: "Loopback or talk to the device"
+    why: Shorting TX to RX and typing in picocom proves the pins and baud rate without the peripheral attached.
+    command: "picocom -b 115200 /dev/ttyLP4"
+    check: {type: manual}

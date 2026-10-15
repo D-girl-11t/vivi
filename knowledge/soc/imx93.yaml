@@ -1,0 +1,87 @@
+# SoC profile: everything that is specific to the NXP i.MX93 lives here.
+# Bus and subsystem templates never mention NXP; they ask this file.
+id: imx93
+title: NXP i.MX93
+arch: arm64
+dts_dir: arch/arm64/boot/dts/freescale
+sibling_prefix: imx93          # "learn from other boards" searches imx93*.dts*
+status: complete
+
+# ---------------------------------------------------------------- pins
+# Pads are named like GPIO_IO08. The pinfunc header lists every legal
+# (pad, function) pair, so we never have to guess a mux macro.
+pins:
+  header: arch/arm64/boot/dts/freescale/imx93-pinfunc.h
+  macro_regex: '#define\s+(MX93_PAD_{pad}__(\w+))\s'   # group1 = macro, group2 = function
+  usage_regex: 'MX93_PAD_{pad}__\w+'                   # pad already used somewhere?
+  gpio_function_regex: '^GPIO(\d+)_IO(\d+)$'           # GPIO2_IO08 -> bank 2, line 8
+  gpio_controller: 'gpio{bank}'
+  pinctrl_parent: '&iomuxc'                            # pinctrl groups go inside this block
+
+# Pad control (SW_PAD_CTL) defaults, taken from NXP's own i.MX93 board files.
+# Bits: drive strength, slew, pull, open-drain (bit 30 = SION, needed for I2C).
+# VERIFY against the reference manual if signals look bad on a scope.
+padconf:
+  i2c: '0x40000b9e'   # open-drain + SION, as used by every i.MX93 board for LPI2C
+  spi: '0x31e'
+  uart: '0x31e'
+  sai: '0x31e'
+  gpio: '0x31e'
+  default: '0x31e'
+
+# ---------------------------------------------------------------- controllers
+# How "instance n of bus X" is spelled in this SoC's dtsi.
+controllers:
+  i2c:  { label: 'lpi2c{n}',  function_prefix: 'LPI2C{n}_' }
+  spi:  { label: 'lpspi{n}',  function_prefix: 'LPSPI{n}_' }
+  uart: { label: 'lpuart{n}', function_prefix: 'LPUART{n}_', tty: 'ttyLP{m}' }
+  sai:  { label: 'sai{n}',    function_prefix: 'SAI{n}_' }
+  usb:  { label: 'usbotg{n}' }
+  gpio: { label: 'gpio{n}',   function_prefix: 'GPIO' }
+
+# ---------------------------------------------------------------- snippets
+# Jinja templates rendered with the planner context (dev, pins, ctrl, ...).
+snippets:
+  pinctrl_group: |
+    pinctrl_{{ dev.label }}: {{ dev.slug }}grp {
+    	fsl,pins = <
+    {%- for p in pins %}
+    		{{ p.macro or ('MX93_PAD_' ~ p.pad ~ '__???') }}	{{ p.padconf }}
+    {%- endfor %}
+    	>;
+    };
+  pinctrl_props: |
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_{{ dev.label }}>;
+  # Extra properties some controllers need when enabled on this SoC
+  controller_extra:
+    sai: |
+      #sound-dai-cells = <0>;
+      assigned-clocks = <&clk IMX93_CLK_SAI{{ ctrl.n }}>;
+      assigned-clock-parents = <&clk IMX93_CLK_AUDIO_PLL>;
+      assigned-clock-rates = <12288000>;
+      fsl,sai-mclk-direction-output;
+    i2c: |
+      clock-frequency = <{{ dev.connection.bus_hz | default(100000) }}>;
+    usb: |
+      dr_mode = "host";
+
+# ---------------------------------------------------------------- real-time offload
+coprocessor:
+  core: Cortex-M33
+  linux_api: remoteproc + RPMsg
+  dt_label: cm33
+  notes: >
+    Timing-critical work (fast quadrature decoding, motor PWM loops) can run on the
+    M33 under FreeRTOS/Zephyr. Linux loads firmware via /sys/class/remoteproc and
+    talks to it over RPMsg (/dev/ttyRPMSG* or rpmsg_char).
+
+# ---------------------------------------------------------------- deploy
+deploy:
+  build_dtb: 'make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- {{ files.dtb_target }}'
+  build_kernel: 'make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules'
+  install_hint: |
+    On NXP Yocto images the boot FAT partition is usually /run/media/boot-mmcblk0p1
+    (eMMC) or boot-mmcblk1p1 (SD). In U-Boot, `printenv fdtfile` tells you which
+    .dtb is loaded. Keep a copy of the original .dtb before overwriting it.
+  install_dtb: 'scp {{ files.dtb_out }} {{ board.host | default("root@board") }}:/run/media/boot-mmcblk0p1/'
