@@ -308,7 +308,15 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     a = ap.parse_args()
     WS = Workspace(a.workspace)
-    srv = ThreadingHTTPServer((a.host, a.port), Handler)
+    try:
+        srv = ThreadingHTTPServer((a.host, a.port), Handler)
+    except OSError as e:
+        if e.errno == 98:
+            raise SystemExit(f'Port {a.port} is already in use. Bring-up Studio is probably already running: '
+                             f'open http://{a.host}:{a.port}\n'
+                             f'Or stop it with:  pkill -f "m server.app"\n'
+                             f'Or use another port:  ./run.sh --port {a.port + 1}')
+        raise
     srv.daemon_threads = True
     print(f'Bring-up Studio on http://{a.host}:{a.port}  (workspace {WS.root})')
     try:
