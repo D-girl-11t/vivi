@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import ai
-from .board import sysfs_stream_cmd
+from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
 from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name
 
@@ -257,6 +257,15 @@ def board(q, body):
     out = {k: v for k, v in snap.items() if k != 'kconfig'}
     out['kconfig_count'] = len(snap.get('kconfig', {}))
     return out
+
+
+@route('POST', '/api/board/test')
+def board_test(q, body):
+    """Try reaching the board with the settings in the form (before saving them)."""
+    cfg = {'transport': body.get('transport') or 'ssh', 'host': (body.get('host') or '').strip()}
+    snap = (WS.cfg.get('board') or {}).get('snapshot') or ''
+    cfg['snapshot'] = snap if os.path.isabs(snap) else os.path.join(WS.root, snap)
+    return test_connection(cfg, WS.state_dir)
 
 
 @route('GET', '/api/board/kconfig')

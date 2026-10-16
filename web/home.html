@@ -55,7 +55,7 @@
 </main>
 
 <!-- setup dialog -->
-<dialog id="dlg-setup" class="dlg">
+<dialog id="dlg-setup" class="dlg wide">
   <form method="dialog" id="setup-form">
     <h2>Setup</h2>
     <label>SoC profile <select name="soc"></select>
@@ -70,7 +70,9 @@
         <option value="local">local: this tool runs on the board itself</option>
         <option value="snapshot">snapshot: offline, from a saved scan</option></select></label>
     <label class="ssh-only">SSH target <input name="board.host" placeholder="root@192.168.1.50" autocomplete="off">
-      <span class="hint">Set up key login once: <code>ssh-copy-id root@&lt;ip&gt;</code>. Find the IP on the serial console with <code>ip addr</code>.</span></label>
+      <span class="hint">user@address of the board. The steps below show how to find the address and set up login.</span></label>
+    <div class="test-row"><button type="button" id="btn-test">🔌 Test connection</button><span id="test-out" class="small"></span></div>
+    <details id="reach-help" class="reach-help" open><summary>How to set this up, step by step</summary><div id="reach-steps"></div></details>
     <div class="dlg-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="setup-save" value="default">Save</button></div>
   </form>
 </dialog>

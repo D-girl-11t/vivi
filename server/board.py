@@ -9,6 +9,7 @@ Transports:
 from __future__ import annotations
 
 import json
+import re
 import os
 import shlex
 import subprocess
@@ -88,7 +89,11 @@ class LocalTransport(Transport):
 class SSHTransport(Transport):
     def __init__(self, host: str, opts: list[str] | None, control_dir: str):
         self.host = host
-        os.makedirs(control_dir, exist_ok=True)
+        # the control socket path must fit in 108 bytes (Unix socket limit); deep workspaces need a short dir
+        if len(control_dir) + len('/cm-') + 40 >= 100:
+            import tempfile
+            control_dir = os.path.join(tempfile.gettempdir(), f'bs-ssh-{os.getuid()}')
+        os.makedirs(control_dir, mode=0o700, exist_ok=True)
         self.base = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
                      '-o', 'ControlMaster=auto', '-o', f'ControlPath={control_dir}/cm-%C',
                      '-o', 'ControlPersist=120', *(opts or []), host]
@@ -222,3 +227,51 @@ def sysfs_stream_cmd(paths: list[str], hz: float) -> str:
     cats = ' '.join(f'"$(cat {shlex.quote(p)} 2>/dev/null)"' for p in paths)
     fmt = '\\t'.join(['%s'] * len(paths))
     return f"while true; do printf '{fmt}\\n' {cats}; sleep {period:.3f}; done"
+
+
+# ---------------------------------------------------------------- connection test
+_SSH_HINTS = [
+    # (pattern in ssh's error, what it means, what to do)
+    (r'Permission denied', 'The board answered, but rejected your key.',
+     'Copy your key once with ssh-copy-id {host} (it asks for the board password one last time). '
+     'No key yet? Create one first: ssh-keygen -t ed25519'),
+    (r'Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED', 'Your laptop does not trust this board yet, or the board was reflashed and has a new identity.',
+     'Run ssh {host} once in a terminal and answer "yes". If it was reflashed: ssh-keygen -R {hostname}, then try again'),
+    (r'Could not resolve hostname', 'That name is not known on your network.', 'Use the IP address from "ip addr" on the board\'s serial console'),
+    (r'Connection refused', 'The board is reachable, but no SSH server is listening on it.',
+     'On the board: check the SSH service is running (systemctl status sshd, or dropbear on small images)'),
+    (r'timed out|No route to host|Network is unreachable|timeout after', 'Nothing answered at that address.',
+     'Check the Ethernet cable and the IP with "ip addr" on the board, and that your laptop is on the same network. A direct cable needs a fixed IP on both ends'),
+]
+
+
+def test_connection(cfg: dict, state_dir: str) -> dict:
+    """Try the configured transport once and explain any failure in plain words."""
+    kind = cfg.get('transport', 'snapshot')
+    probe = "uname -r; cat /proc/device-tree/model 2>/dev/null | tr -d '\\0'; echo; id -u; " \
+            "test -r /proc/config.gz && echo cfg; test -d /sys/kernel/debug/pinctrl && echo dbg; true"
+    if kind == 'snapshot':
+        p = cfg.get('snapshot') or ''
+        return {'ok': os.path.isfile(p), 'summary': f'snapshot file {"found" if os.path.isfile(p) else "NOT found"}: {p}'}
+    if kind == 'ssh' and not cfg.get('host'):
+        return {'ok': False, 'summary': 'No SSH target set', 'fix': 'Fill in the SSH target, like root@192.168.1.50'}
+    t = make_transport(cfg, state_dir)
+    rc, out, err = t.run(probe, timeout=12)
+    if rc != 0:
+        res = {'ok': False, 'summary': 'Could not run a command on the board', 'detail': (err or out).strip()[-400:]}
+        host = cfg.get('host', '')
+        for rx, what, fix in _SSH_HINTS:
+            if re.search(rx, err or '', re.I):
+                res.update(summary=what, fix=fix.format(host=host, hostname=host.split('@')[-1]))
+                break
+        return res
+    lines = out.split('\n')
+    flags = set(l.strip() for l in lines[3:])
+    notes = []
+    if lines[2:3] and lines[2].strip() != '0':
+        notes.append('You are not logged in as root, so some board information (debugfs, dmesg) may be hidden. Use root@…')
+    if 'cfg' not in flags:
+        notes.append('/proc/config.gz is missing, so kernel-config checks will show "?" (needs CONFIG_IKCONFIG_PROC=y)')
+    if 'dbg' not in flags:
+        notes.append('debugfs is not mounted, so there is no pin-ownership or deferred-probe info. On the board: mount -t debugfs none /sys/kernel/debug')
+    return {'ok': True, 'summary': f'Connected: {lines[1].strip() or "board"}, kernel {lines[0].strip()}', 'notes': notes}

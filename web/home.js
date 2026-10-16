@@ -121,10 +121,66 @@ function openSetup() {
   f.soc.value = c.soc || '';
   f.kernel_src.value = c.kernel_src || ''; f.board_dts.value = c.board_dts || '';
   f['board.transport'].value = c.board.transport || 'snapshot'; f['board.host'].value = c.board.host || '';
-  const sync = () => $('.ssh-only').classList.toggle('hidden', f['board.transport'].value !== 'ssh');
-  f['board.transport'].onchange = sync; sync();
+  const sync = () => { $('.ssh-only').classList.toggle('hidden', f['board.transport'].value !== 'ssh'); renderReach(); $('#test-out').innerHTML = ''; };
+  f['board.transport'].onchange = sync; f['board.host'].oninput = renderReach; sync();
+  $('#reach-help').open = !(O.status.board.scanned && !O.status.board.scanned.demo);
   $('#dlg-setup').showModal();
 }
+// step-by-step help for the selected way of reaching the board; commands use the target you typed
+const cmd = c => `<div class="cmd"><pre>${esc(c)}</pre><button type="button" class="copy-cmd" title="copy">copy</button></div>`;
+function renderReach() {
+  const f = $('#setup-form'), kind = f['board.transport'].value;
+  const host = f['board.host'].value.trim() || 'root@<board-ip>', ip = host.split('@').pop();
+  const step = (n, title, body) => `<li><b>${title}</b>${body}</li>`;
+  let h = '';
+  if (kind === 'ssh') h = `<p class="muted small">The tool logs in to the board over the network and runs read-only commands.
+      You only need the serial cable once, to find the board's address.</p><ol class="reach">
+    ${step(1, 'Connect the cables', `<p>Power, the board's <b>debug USB</b> port to your laptop (serial console), and <b>Ethernet</b> to your router or straight to your laptop.</p>`)}
+    ${step(2, 'Open the serial console', `<p>On your laptop. The board usually shows up as one or two ports; the Linux console is on one of them.</p>
+      ${cmd('ls /dev/ttyACM* /dev/ttyUSB*')}${cmd('sudo minicom -D /dev/ttyACM0 -b 115200')}
+      <p>Power the board on, wait for <code>login:</code> and log in as <code>root</code>. Nothing shows up? Try the other port.</p>`)}
+    ${step(3, 'Find the board\'s address', `<p>In the serial console, look for <code>inet 192.168.x.y</code> under <code>eth0</code> or <code>eth1</code>:</p>${cmd('ip addr')}
+      <p>No address? <code>udhcpc -i eth0</code>. <b>Cable straight to your laptop?</b> Give both ends a fixed address:</p>
+      ${cmd('ip addr add 192.168.7.2/24 dev eth0 && ip link set eth0 up      # on the board')}
+      ${cmd('sudo ip addr add 192.168.7.1/24 dev <your-ethernet>             # on the laptop (see: ip link)')}`)}
+    ${step(4, 'Give root a password', `<p>Most SSH servers refuse logins with an empty password. On the board:</p>${cmd('passwd')}`)}
+    ${step(5, 'Let your laptop log in without a password', `<p>The tool can't type passwords, so it uses a key. On your laptop:</p>
+      ${cmd(`ssh ${host}          # first time: type "yes", then the password`)}
+      ${cmd(`ssh-copy-id ${host}  # no key yet? first run: ssh-keygen -t ed25519`)}
+      ${cmd(`ssh -o BatchMode=yes ${host} uname -r   # must print a version with NO password prompt`)}`)}
+    ${step(6, 'Fill in the SSH target above and press Test connection', `<p>Then <b>Save</b> and <b>⟳ Scan now</b> on the home page.</p>`)}
+  </ol>`;
+  else if (kind === 'local') h = `<p class="muted small">Use this when the tool itself runs <b>on the board</b>, for example on a board with a desktop,
+      or when you open it from your laptop's browser over the network.</p><ol class="reach">
+    ${step(1, 'Copy the tool to the board', `${cmd('scp -r bringup-studio root@<board-ip>:/root/')}`)}
+    ${step(2, 'Check it has what it needs', `<p>python3 with PyYAML and Jinja2:</p>${cmd(`python3 -c "import yaml, jinja2; print('ok')"`)}`)}
+    ${step(3, 'Start it on the board and open it from your laptop', `${cmd('cd /root/bringup-studio && ./run.sh --host 0.0.0.0')}
+      <p>Then browse to <code>http://&lt;board-ip&gt;:8765</code>. <b>Only on a network you trust</b>: the page has no login.</p>`)}
+    ${step(4, 'Kernel source', `<p>The kernel source usually lives on your laptop, not the board. For source checks, run the tool on the laptop with <b>ssh</b> instead.</p>`)}
+  </ol>`;
+  else h = `<p class="muted small">No board needed: the tool reads a saved scan. Good for learning offline, or for comparing before and after a change.</p><ol class="reach">
+    ${step(1, 'Use the demo', `<p><code>snapshots/demo-imx93-frdm.json</code> has a real device tree, but its drivers, kernel config and dmesg are <b>made up</b>.</p>`)}
+    ${step(2, 'Or save your own', `<p>Connect once over <b>ssh</b>, scan, then in the workspace's Board tab click <b>Save snapshot…</b>.
+      Set <code>board.snapshot</code> in workspace.yaml to that file.</p>`)}
+  </ol>`;
+  $('#reach-steps').innerHTML = h;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.copy-cmd'); if (!b) return;
+  const t = b.previousElementSibling.innerText.replace(/\s+#.*$/, '');
+  navigator.clipboard.writeText(t).then(() => toast('copied: ' + t), () => toast('select the text and copy it manually'));
+});
+$('#btn-test').onclick = () => guard(async () => {
+  const f = $('#setup-form'), out = $('#test-out'), b = $('#btn-test');
+  b.disabled = true; out.innerHTML = '<span class="muted">trying…</span>';
+  try {
+    const r = await api('/api/board/test', { method: 'POST', body: { transport: f['board.transport'].value, host: f['board.host'].value } });
+    out.innerHTML = r.ok
+      ? `<span class="okc">✓ ${esc(r.summary)}</span>${(r.notes || []).map(n => `<div class="muted">• ${esc(n)}</div>`).join('')}`
+      : `<span class="err">✗ ${esc(r.summary)}</span>${r.fix ? `<div><b>Fix:</b> ${esc(r.fix)}</div>` : ''}${r.detail ? `<div class="muted mono">${esc(r.detail)}</div>` : ''}`;
+  } finally { b.disabled = false; }
+});
+
 $('#setup-save').onclick = e => {
   e.preventDefault();
   const f = $('#setup-form');
