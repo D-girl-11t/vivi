@@ -22,6 +22,7 @@ let O = null, KB = null;
 // ------------------------------------------------------------ page
 async function load() {
   [O, KB] = await Promise.all([api('/api/overview'), api('/api/knowledge')]);
+  O.ping = await api('/api/board/ping').catch(() => ({}));
   renderSetup(); renderDevices(); renderLadder(); renderAi();
 }
 
@@ -35,7 +36,7 @@ function renderSetup() {
   // what the tool can do right now, in plain words
   const cap = (on, label, why) => `<span class="cap ${on}" title="${esc(why)}"><span class="state-dot ${on}"></span>${label}</span>`;
   let h = `<div class="caps">
-    ${cap(live && b.live ? 'ok' : (sc ? 'warn' : 'todo'), 'Live board checks', 'driver enabled, .dtb booted, driver bound, /dev nodes, tools: needs the board over ssh')}
+    ${cap(live && b.live && O.ping?.reachable !== false ? 'ok' : (sc ? 'warn' : 'todo'), 'Live board checks', 'driver enabled, .dtb booted, driver bound, /dev nodes, tools: needs the board over ssh')}
     ${cap(src.ok ? 'ok' : 'todo', 'Source checks & file links', 'pins, controller, device node, opening the .dts at the right line: needs the kernel source')}
     ${cap(src.tree_ok ? 'ok' : 'todo', 'Driver & pin lookups', 'wizard search, is-there-a-driver, CONFIG_ names, reading the driver code, Pins tab: needs the kernel source')}
   </div>`;
@@ -67,15 +68,21 @@ function renderSetup() {
     'Used for: editing guidance, pin names, finding drivers.',
     `<button data-act="${!src.ok && live ? 'detect' : 'setup-source'}" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${!src.ok && live ? '✨ Detect from my board' : (src.configured ? 'Change' : 'Set up')}</button>`);
 
-  const off = c.board.transport === 'off';
-  h += card(off ? 'warn' : brdState, 'Board', off ? 'disconnected' : live ? 'connected' : (sc ? 'demo data' : (b.live ? 'not scanned' : 'not connected')),
+  const off = c.board.transport === 'off', ping = O.ping || {}, lost = b.live && ping.reachable === false;
+  h += card(lost ? 'todo' : off ? 'warn' : brdState, 'Board', lost ? 'not answering' : off ? 'disconnected' : live ? 'connected' : (sc ? 'demo data' : (b.live ? 'not scanned' : 'not connected')),
+    lost ? `<div class="sc-warn">⚠ ${esc(c.board.host)} is not answering: ${esc((ping.reason || 'no reply').replace(/\.$/, ''))}.
+        ${ping.last_ok ? `Last answered at ${esc(ping.last_ok)}.` : ''}</div>
+      <p class="small">Usually: it is rebooting, it lost Wi-Fi after a reboot, or its IP changed. Open the <b>serial console</b> to see what it's doing
+        (no network needed). The last scan stays visible meanwhile.</p>` :
     off ? `<p class="muted">Not talking to the board. ${sc && !sc.demo ? `Still showing the <b>last scan</b> (${esc(sc.time)}) so you can keep reading; board-side checks show “?” until you reconnect.` : ''}</p>` :
     live ? kv('Model', esc(b.model || '?')) + kv('Kernel', esc(b.release || '?')) + kv('Via', `<code>${esc(b.transport)}</code>`)
       + kv('Scanned', esc(sc.time)) + kv('Drivers', `${b.findings.bound} bound · <b class="${b.findings.unbound.length ? 'err' : ''}">${b.findings.unbound.length} not bound</b> · ${b.findings.deferred.length} deferred`)
       : sc ? `<p class="muted">Showing a <b>demo snapshot</b>: the device tree is real, but drivers, kernel config and dmesg are made up. Connect your board to see the real thing.</p>`
         : `<p class="muted">${b.live ? 'Connected settings saved. Press <b>Scan now</b> to read the board.' : 'Reach the board over ssh to see what is really running on it.'}</p>`,
     'Used for: checking what really runs, which drivers bound, dmesg errors.',
-    `<div class="row-btns">${b.live
+    `<div class="row-btns">${lost
+      ? `<a class="btn primary" href="/app?tab=serial">🖥 Serial console</a><button data-act="recheck">↻ Check again</button><button data-act="setup-board">Change</button>`
+      : b.live
       ? `<button data-act="scan">⟳ Scan now</button><button data-act="setup-board">Change</button><button data-act="disconnect" title="Stop contacting the board; keep showing the last scan">⏏ Disconnect</button>`
       : (c.board.transport === 'off' && c.board.host
         ? `<button data-act="reconnect" class="primary">🔌 Connect to ${esc(c.board.host)}</button><button data-act="setup-board">Change</button>`
@@ -141,6 +148,7 @@ document.addEventListener('click', e => {
   e.preventDefault();
   if (t.dataset.act.startsWith('setup')) openSetup(t.dataset.act.split('-')[1] || 'source');
   if (t.dataset.act === 'detect') { openSetup('source'); $('#btn-detect').click(); }
+  if (t.dataset.act === 'recheck') guard(async () => { O.ping = await api('/api/board/ping?force=1'); renderSetup(); toast(O.ping.reachable ? 'the board answers again' : 'still not answering'); });
   if (t.dataset.act === 'disconnect') guard(async () => { await api('/api/board/disconnect', { method: 'POST' }); await load(); toast('disconnected: showing the last scan'); });
   if (t.dataset.act === 'reconnect') guard(async () => { t.disabled = true; t.textContent = 'connecting…';
     const r = await api('/api/board/connect', { method: 'POST' });
@@ -435,4 +443,11 @@ async function createDevice() {
   location.href = '/app?p=' + encodeURIComponent(r.id);
 }
 
+// keep checking that the board really answers (a setting saying "ssh" doesn't mean it's up)
+setInterval(async () => {
+  if (document.hidden || !O || !O.status.board.live) return;
+  const p = await api('/api/board/ping').catch(() => null);
+  if (p && (p.reachable !== O.ping?.reachable)) { O.ping = p; renderSetup(); if (!p.reachable) toast('⚠ The board stopped answering', 5000); else toast('✓ The board answers again'); }
+  else if (p) O.ping = p;
+}, 15000);
 guard(async () => { await load(); if (location.hash === '#add') { history.replaceState(null, '', '/'); openWizard(); } });

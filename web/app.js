@@ -62,6 +62,7 @@ $$('.tabs').forEach(nav => nav.addEventListener('click', e => {
   switchTab(nav.dataset.for, b.dataset.tab);
 }));
 function switchTab(panel, tab) {
+  if (panel === 'center' && tab === 'serial') guard(initSerial);
   if (panel === 'left' && tab === 'boot' && !S.boot) guard(loadBoot);
   $$(`.tabs[data-for="${panel}"] button`).forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
   $$(`#${panel} > .tabbody`).forEach(x => x.classList.toggle('hidden', x.id !== `${panel}-${tab}`));
@@ -77,6 +78,8 @@ async function loadStatus() {
   const btext = st.board.transport === 'disconnected' ? 'disconnected' : sc ? (sc.demo ? 'demo data' : (st.board.model || 'board') + ' · ' + esc((sc.time || '').slice(11, 16))) : 'not scanned';
   chips.push(`<span class="chip" title="Board: ${esc(st.board.transport)}${st.board.model ? ' · ' + esc(st.board.model) : ''}${sc ? ' · scanned ' + esc(sc.time) : ''}">${dot(bstate)}Board: ${esc(btext)}</span>`);
   chips.push(`<span class="chip" title="Kernel source: ${esc(st.source.kernel || 'not set')}\nBoard file: ${esc(st.source.board_dts || 'not set')}">${dot(st.source.ok ? 'ok' : 'bad')}Source: ${esc((st.source.board_dts || 'not set').split('/').pop())}</span>`);
+  if (S.ping && S.ping.reachable === false && st.board.live)
+    chips[1] = `<span class="chip lost" title="${esc(st.board.transport)} is not answering: ${esc(S.ping.reason || '')}${S.ping.last_ok ? ' · last answered ' + esc(S.ping.last_ok) : ''}. Open the Serial tab to see what the board is doing.">${dot('bad')}Board: not answering</span>`;
   $('#chips').innerHTML = chips.join('');
   $('#btn-scan').disabled = false;
 }
@@ -302,6 +305,81 @@ async function rebootAndCheck(btn, rescue) {
     Check the guide's <b>Deploy</b> and <b>Probe</b> steps on the right, or <a href="#" id="cmp-after">compare what booted with your source</a>.</div>`;
   $('#cmp-after').onclick = e => { e.preventDefault(); compareDtb(LIVE, 'source'); };
   S.boot = null;
+}
+
+// ------------------------------------------------------------ serial console
+const SER = { es: null, text: '' };
+const stripAnsi = t => t.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Za-z0-9]|\x1b[=>]/g, '');
+function serAppend(chunk) {
+  if (!chunk) return;
+  // carriage returns: "abc\rxy" redraws the line; keep it simple: drop lone \r, keep \n
+  SER.text = (SER.text + stripAnsi(chunk).replace(/\r(?!\n)/g, '').replace(/\r\n/g, '\n').replace(/[\x07\x00]/g, '')).slice(-200000);
+  const o = $('#ser-out'), atEnd = o.scrollTop + o.clientHeight >= o.scrollHeight - 30;
+  o.textContent = SER.text; if (atEnd) o.scrollTop = o.scrollHeight;
+  renderSerQuick();
+}
+async function initSerial() {
+  const r = await api('/api/serial/ports');
+  const sel = $('#ser-port'), prev = sel.value;
+  sel.innerHTML = r.ports.map(p => `<option value="${esc(p.dev)}">${esc(p.dev)}${p.note ? ' · ' + esc(p.note) : ''}${p.busy ? ' · IN USE by ' + esc(p.busy.cmd.split(' ')[0]) : ''}</option>`).join('')
+    || '<option value="">no serial ports found: is the debug USB cable plugged in?</option>';
+  if (r.state.dev) sel.value = r.state.dev; else if (prev) sel.value = prev;
+  const busy = r.ports.filter(p => p.busy);
+  $('#ser-note').innerHTML = busy.length ? `<div class="callout warn">⚠ ${busy.map(p => `<code>${esc(p.dev)}</code> is open in <b>${esc(p.busy.cmd)}</b>`).join(', ')}.
+      Two programs on one port each get half the characters. Close it first (in minicom: <b>Ctrl-A</b>, then <b>X</b>), then press Connect.</div>` : '';
+  serSetState(r.state);
+  if (r.state.open && !SER.es) serStream();
+}
+function serSetState(st) {
+  $('#ser-open').classList.toggle('hidden', st.open); $('#ser-close').classList.toggle('hidden', !st.open);
+  $('#ser-state').textContent = st.open ? `connected to ${st.dev} @ ${st.baud}${st.catching_uboot ? ' · tapping keys to stop U-Boot…' : ''}` : (st.error || 'not connected');
+  $('#ser-line').disabled = !st.open;
+  SER.open = st.open; renderSerQuick();
+}
+function serStream() {
+  if (SER.es) SER.es.close();
+  SER.es = new EventSource('/api/serial/stream');
+  SER.es.onmessage = ev => serAppend(JSON.parse(ev.data));
+  SER.es.addEventListener('closed', ev => { SER.es.close(); SER.es = null; serSetState({ open: false, error: JSON.parse(ev.data) }); });
+}
+$('#ser-open').onclick = () => guard(async () => {
+  let r;
+  try { r = await api('/api/serial/open', { method: 'POST', body: { dev: $('#ser-port').value, baud: $('#ser-baud').value } }); }
+  catch (e) { if (/in use/.test(e.message) && confirm(e.message + '\n\nConnect anyway?')) r = await api('/api/serial/open', { method: 'POST', body: { dev: $('#ser-port').value, baud: $('#ser-baud').value, force: true } }); else throw e; }
+  SER.text = ''; serSetState(r); serStream();
+  await api('/api/serial/send', { method: 'POST', body: { key: 'enter' } });       // wake the prompt
+  $('#ser-line').focus();
+});
+$('#ser-close').onclick = () => guard(async () => { if (SER.es) { SER.es.close(); SER.es = null; } serSetState(await api('/api/serial/close', { method: 'POST' })); initSerial(); });
+const serSend = (text, newline = true) => api('/api/serial/send', { method: 'POST', body: { text, newline } });
+$('#ser-line').onkeydown = e => {
+  if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value; e.target.value = ''; guard(() => serSend(v)); }
+  else if (e.key === 'c' && e.ctrlKey) { e.preventDefault(); guard(() => api('/api/serial/send', { method: 'POST', body: { key: 'ctrl-c' } })); }
+};
+$('#center-serial').addEventListener('click', e => {
+  const k = e.target.closest('[data-key]'); if (k) return guard(() => api('/api/serial/send', { method: 'POST', body: { key: k.dataset.key } }));
+  const q = e.target.closest('[data-cmd]'); if (q) { $('#ser-line').value = q.dataset.cmd; $('#ser-line').focus(); return; }
+  const cu = e.target.closest('[data-catch]'); if (cu) return guard(async () => { serSetState(await api('/api/serial/catch-uboot', { method: 'POST', body: { seconds: 40 } }));
+    toast('Now press the board\'s RESET button (or power-cycle it). Keys are being tapped for 40 s to stop at U-Boot.', 8000); });
+});
+// suggestions depend on where the board is: U-Boot prompt, Linux login, or a shell
+async function renderSerQuick() {
+  const tail = SER.text.slice(-400), el = $('#ser-quick'); if (!el) return;
+  if (!SER.open) { el.innerHTML = ''; return; }
+  let where = /=>\s*$/.test(tail) ? 'uboot' : /login:\s*$/.test(tail) ? 'login' : /Password:\s*$/i.test(tail) ? 'password' : 'shell';
+  if (SER.where === where && el.innerHTML) return; SER.where = where;
+  const chip = (c, t) => `<button class="chip-btn" data-cmd="${esc(c)}" title="puts it in the input box; press Enter to send">${esc(t || c)}</button>`;
+  let h = `<span class="muted small">${{ uboot: 'U-Boot prompt', login: 'Linux login prompt', password: 'password prompt', shell: 'Linux shell (or booting)' }[where]}:</span> `;
+  if (where === 'uboot') {
+    let hist = []; try { hist = (await api('/api/boot/history')).items.filter(x => x.action === 'switch').slice(-2).reverse(); } catch { }
+    h += chip('printenv fdtfile') + chip('ls mmc 0:1', 'list boot files') +
+      hist.map(x => x.backup ? chip(`setenv fdtfile ${x.backup}; boot`, `boot the backup ${x.backup}`) : x.previous ? chip(`setenv fdtfile ${x.previous}; boot`, `boot ${x.previous}`) : '').join('') + chip('boot');
+  } else if (where === 'login') h += chip('root');
+  else if (where === 'shell') h += chip('ip addr', 'my IP?') + chip('ip link', 'network interfaces') + chip('udhcpc -i eth0', 'DHCP on eth0') +
+      chip('connmanctl services', 'Wi-Fi networks (connman)') + chip('cat /proc/device-tree/model', 'which device tree booted') +
+      chip('dmesg | tail -30') + chip('reboot');
+  h += ` <button class="chip-btn" data-catch="1" title="Tap keys while you reset the board, to stop in U-Boot">⏸ Stop in U-Boot on next reset</button>`;
+  el.innerHTML = h;
 }
 
 // ------------------------------------------------------------ center viewer
@@ -563,9 +641,17 @@ function drawLive() {
 }
 
 // ------------------------------------------------------------ boot
+setInterval(async () => {
+  if (document.hidden || !S.status?.board?.live) return;
+  const p = await api('/api/board/ping').catch(() => null);
+  if (p && p.reachable !== S.ping?.reachable) { S.ping = p; loadStatus(); if (p.reachable === false) toast('⚠ The board stopped answering: try the Serial tab', 6000); }
+  else if (p) S.ping = p;
+}, 20000);
 async function boot() {
+  if (new URLSearchParams(location.search).get('tab') === 'serial') setTimeout(() => switchTab('center', 'serial'), 300);
   await guard(async () => {
     S.kb = await api('/api/knowledge');
+    S.ping = await api('/api/board/ping').catch(() => null);
     await loadStatus();
     S.ai = S.status.ai;
     await Promise.all([loadBoard(), loadSource()]);

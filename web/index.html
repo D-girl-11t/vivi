@@ -39,6 +39,7 @@
     <nav class="tabs" data-for="center" id="center-tabs">
       <button data-tab="view" class="active">Viewer</button>
       <button data-tab="live">Live</button>
+      <button data-tab="serial" title="Serial console (USB-UART): works when the network doesn't">Serial</button>
     </nav>
     <div class="tabbody" id="center-view">
       <div id="view-head"></div>
@@ -52,6 +53,24 @@
         </ol>
         <p class="muted">Left side: what exists (live board, source tree, pins). Right side: what to do next.</p>
       </div></div>
+    </div>
+    <div class="tabbody hidden" id="center-serial">
+      <div class="serial-ctl">
+        <select id="ser-port"></select>
+        <select id="ser-baud"><option>115200</option><option>9600</option><option>57600</option><option>230400</option><option>460800</option><option>921600</option></select>
+        <button id="ser-open" class="primary">Connect</button>
+        <button id="ser-close" class="hidden">Disconnect</button>
+        <span id="ser-state" class="small muted"></span>
+      </div>
+      <div id="ser-note" class="small"></div>
+      <pre id="ser-out" class="serial-out" tabindex="0"></pre>
+      <div class="serial-in">
+        <input id="ser-line" placeholder="type a command and press Enter (sent to the board)" autocomplete="off" spellcheck="false">
+        <button data-key="ctrl-c" title="Interrupt the running command">Ctrl-C</button>
+        <button data-key="enter" title="Just press Enter">⏎</button>
+        <button data-key="tab">Tab</button>
+      </div>
+      <div class="serial-quick" id="ser-quick"></div>
     </div>
     <div class="tabbody hidden" id="center-live">
       <div class="live-ctl">

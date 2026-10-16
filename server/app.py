@@ -21,6 +21,7 @@ from .planner import Knowledge, PinResolver, plan
 from . import boot as bootf
 from .build import build_dtb, fetch_dts
 from .fetch import fetch_driver
+from .serialcon import SESSION as SERIAL, list_ports
 from .validate import detect_from_board, validate_source
 from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name, set_yaml_fields
 
@@ -429,6 +430,82 @@ def source_fetch_dts(q, body):
     return r
 
 
+# ---------------------------------------------------------------- is the board still answering?
+_PING = {'t': 0, 'res': None, 'last_ok': None}
+
+
+@route('GET', '/api/board/ping')
+def board_ping(q, body):
+    """Quick reachability check (cached 10 s). Uses a fresh connection so a dead board can't hang it."""
+    if not WS.transport.live:
+        return {'reachable': None, 'reason': 'not connected (setting)'}
+    if time.time() - _PING['t'] < 10 and _PING['res'] and not q.get('force'):
+        return _PING['res']
+    t = WS.transport
+    if isinstance(getattr(t, 'host', None), str):
+        try:
+            r = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4', '-o', 'ControlPath=none',
+                                t.host, 'true'], capture_output=True, text=True, timeout=8)
+            ok, err = r.returncode == 0, r.stderr.strip()
+        except subprocess.TimeoutExpired:
+            ok, err = False, 'timeout after 8s'
+        if not ok and hasattr(t, 'close'):
+            t.close()                     # drop the shared connection to a board that went away
+    else:
+        ok, err = True, ''
+    now = time.strftime('%H:%M:%S')
+    if ok:
+        _PING['last_ok'] = now
+    res = {'reachable': ok, 'checked': now, 'last_ok': _PING['last_ok']}
+    if not ok:
+        from .board import _SSH_HINTS
+        res['reason'] = next((what for rx, what, _ in _SSH_HINTS if re.search(rx, err, re.I)), err[-200:] or 'no answer')
+    _PING.update(t=time.time(), res=res)
+    return res
+
+
+# ---------------------------------------------------------------- serial console
+@route('GET', '/api/serial/ports')
+def serial_ports(q, body):
+    return {'ports': list_ports(), 'state': SERIAL.state()}
+
+
+@route('POST', '/api/serial/open')
+def serial_open(q, body):
+    try:
+        SERIAL.open(body['dev'], int(body.get('baud') or 115200), bool(body.get('force')))
+    except (ValueError, RuntimeError, OSError) as e:
+        raise ApiError(str(e))
+    return SERIAL.state()
+
+
+@route('POST', '/api/serial/close')
+def serial_close(q, body):
+    SERIAL.close()
+    return SERIAL.state()
+
+
+@route('POST', '/api/serial/send')
+def serial_send(q, body):
+    keys = {'enter': b'\r', 'ctrl-c': b'\x03', 'ctrl-d': b'\x04', 'tab': b'\t', 'esc': b'\x1b', 'space': b' '}
+    try:
+        if body.get('key'):
+            SERIAL.send(keys[body['key']])
+        else:
+            SERIAL.send((body.get('text') or '').encode() + (b'\r' if body.get('newline', True) else b''))
+    except (KeyError, RuntimeError, OSError) as e:
+        raise ApiError(str(e))
+    return {'ok': True}
+
+
+@route('POST', '/api/serial/catch-uboot')
+def serial_catch_uboot(q, body):
+    if not SERIAL.is_open:
+        raise ApiError('open the serial console first')
+    SERIAL.catch_uboot(int(body.get('seconds') or 30))
+    return SERIAL.state()
+
+
 @route('GET', '/api/board/kconfig')
 def board_kconfig(q, body):
     snap = WS.snapshot() or {}
@@ -627,6 +704,8 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         if method == 'GET' and u.path == '/api/live':
             return self._live(q)
+        if method == 'GET' and u.path == '/api/serial/stream':
+            return self._serial_stream(q)
         if method == 'GET' and not u.path.startswith('/api/'):
             return self._static(u.path)
         fn = ROUTES.get((method, u.path))
@@ -674,6 +753,25 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             proc.kill()
+
+    def _serial_stream(self, q):
+        """Server-sent events: serial output as it arrives (starts with the last few KB)."""
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        st = SERIAL.state()
+        off = max(0, st['end'] - int(q.get('backlog', 8192)))
+        try:
+            while True:
+                if not SERIAL.is_open:
+                    self.wfile.write(f'event: closed\ndata: {json.dumps(SERIAL.error or "closed")}\n\n'.encode()); self.wfile.flush()
+                    return
+                off, data = SERIAL.read_since(off, wait=15)
+                msg = json.dumps(data.decode('utf-8', errors='replace')) if data else '""'
+                self.wfile.write(f'data: {msg}\n\n'.encode()); self.wfile.flush()   # empty = keep-alive
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_GET(self): self._dispatch('GET')
     def do_POST(self): self._dispatch('POST')
