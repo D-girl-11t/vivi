@@ -35,7 +35,7 @@ function renderSetup() {
   // what the tool can do right now, in plain words
   const cap = (on, label, why) => `<span class="cap ${on}" title="${esc(why)}"><span class="state-dot ${on}"></span>${label}</span>`;
   let h = `<div class="caps">
-    ${cap(live ? 'ok' : (sc ? 'warn' : 'todo'), 'Live board checks', 'driver enabled, .dtb booted, driver bound, /dev nodes, tools: needs the board over ssh')}
+    ${cap(live && b.live ? 'ok' : (sc ? 'warn' : 'todo'), 'Live board checks', 'driver enabled, .dtb booted, driver bound, /dev nodes, tools: needs the board over ssh')}
     ${cap(src.ok ? 'ok' : 'todo', 'Source checks & file links', 'pins, controller, device node, opening the .dts at the right line: needs the kernel source')}
     ${cap(src.tree_ok ? 'ok' : 'todo', 'Driver & pin lookups', 'wizard search, is-there-a-driver, CONFIG_ names, reading the driver code, Pins tab: needs the kernel source')}
   </div>`;
@@ -53,7 +53,7 @@ function renderSetup() {
   h += '<div class="setup-grid">';
   h += card(st.soc.id ? 'ok' : 'todo', 'SoC profile', st.soc.id ? (st.soc.status === 'starter' ? 'starter' : 'ready') : 'missing',
     st.soc.id ? kv('Chip', esc(st.soc.title)) + kv('Profile', `<code>knowledge/soc/${esc(st.soc.id)}.yaml</code>`) : warns([`profile '${c.soc}' not found`]),
-    'How this chip names its pins and controllers, and its camera layout.', `<button data-act="setup">Change</button>`);
+    'How this chip names its pins and controllers, and its camera layout.', `<button data-act="setup-soc">Change</button>`);
 
   h += card(srcState, 'Kernel source', src.ok ? (src.warnings.length ? 'check' : 'connected') : (src.configured ? 'problem' : 'not set'),
     (src.tree_ok ? kv('Kernel', `${esc(src.version || '?')}${src.flavor ? ` <span class="muted">· ${esc(src.flavor)}</span>` : ''}`)
@@ -65,15 +65,21 @@ function renderSetup() {
         <span class="muted small">(board kernel <code>${esc(src.get_source.release)}</code>${src.get_source.commit ? `, commit <code>${esc(src.get_source.commit)}</code>` : ''})</span>
         ${cmd(src.get_source.cmd)}<span class="muted small">On your laptop (≈ 300 MB). Then set Kernel source to that folder.</span></div>` : ''),
     'Used for: editing guidance, pin names, finding drivers.',
-    `<button data-act="${!src.ok && live ? 'detect' : 'setup'}" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${!src.ok && live ? '✨ Detect from my board' : (src.configured ? 'Change' : 'Set up')}</button>`);
+    `<button data-act="${!src.ok && live ? 'detect' : 'setup-source'}" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${!src.ok && live ? '✨ Detect from my board' : (src.configured ? 'Change' : 'Set up')}</button>`);
 
-  h += card(brdState, 'Board', live ? 'connected' : (sc ? 'demo data' : (b.live ? 'not scanned' : 'not connected')),
+  const off = c.board.transport === 'off';
+  h += card(off ? 'warn' : brdState, 'Board', off ? 'disconnected' : live ? 'connected' : (sc ? 'demo data' : (b.live ? 'not scanned' : 'not connected')),
+    off ? `<p class="muted">Not talking to the board. ${sc && !sc.demo ? `Still showing the <b>last scan</b> (${esc(sc.time)}) so you can keep reading; board-side checks show “?” until you reconnect.` : ''}</p>` :
     live ? kv('Model', esc(b.model || '?')) + kv('Kernel', esc(b.release || '?')) + kv('Via', `<code>${esc(b.transport)}</code>`)
       + kv('Scanned', esc(sc.time)) + kv('Drivers', `${b.findings.bound} bound · <b class="${b.findings.unbound.length ? 'err' : ''}">${b.findings.unbound.length} not bound</b> · ${b.findings.deferred.length} deferred`)
       : sc ? `<p class="muted">Showing a <b>demo snapshot</b>: the device tree is real, but drivers, kernel config and dmesg are made up. Connect your board to see the real thing.</p>`
         : `<p class="muted">${b.live ? 'Connected settings saved. Press <b>Scan now</b> to read the board.' : 'Reach the board over ssh to see what is really running on it.'}</p>`,
     'Used for: checking what really runs, which drivers bound, dmesg errors.',
-    `<div class="row-btns"><button data-act="setup" class="${live ? '' : 'primary'}">${c.board.transport === 'ssh' ? 'Change' : 'Connect'}</button>${b.live ? '<button data-act="scan">⟳ Scan now</button>' : ''}</div>`);
+    `<div class="row-btns">${b.live
+      ? `<button data-act="scan">⟳ Scan now</button><button data-act="setup-board">Change</button><button data-act="disconnect" title="Stop contacting the board; keep showing the last scan">⏏ Disconnect</button>`
+      : (c.board.transport === 'off' && c.board.host
+        ? `<button data-act="reconnect" class="primary">🔌 Connect to ${esc(c.board.host)}</button><button data-act="setup-board">Change</button>`
+        : `<button data-act="setup-board" class="primary">Connect</button>`)}</div>`);
   h += '</div>';
   $('#setup-cards').innerHTML = h;
 }
@@ -133,22 +139,39 @@ document.addEventListener('click', e => {
   if (del) { e.preventDefault(); e.stopPropagation(); guard(() => deleteDevice(del.dataset.del)); return; }
   const t = e.target.closest('[data-act]'); if (!t) return;
   e.preventDefault();
-  if (t.dataset.act === 'setup') openSetup();
-  if (t.dataset.act === 'detect') { openSetup(); $('#btn-detect').click(); }
+  if (t.dataset.act.startsWith('setup')) openSetup(t.dataset.act.split('-')[1] || 'source');
+  if (t.dataset.act === 'detect') { openSetup('source'); $('#btn-detect').click(); }
+  if (t.dataset.act === 'disconnect') guard(async () => { await api('/api/board/disconnect', { method: 'POST' }); await load(); toast('disconnected: showing the last scan'); });
+  if (t.dataset.act === 'reconnect') guard(async () => { t.disabled = true; t.textContent = 'connecting…';
+    const r = await api('/api/board/connect', { method: 'POST' });
+    if (r.ok) { await api('/api/scan', { method: 'POST' }); await load(); toast('connected and scanned'); }
+    else { await load(); toast(`✗ ${r.summary}${r.fix ? ' · ' + r.fix : ''}`, 9000); } });
   if (t.dataset.act === 'wizard') openWizard();
   if (t.dataset.act === 'scan') guard(async () => { t.disabled = true; t.textContent = 'scanning…'; await api('/api/scan', { method: 'POST' }); await load(); toast('scan done'); });
 });
 
 // ------------------------------------------------------------ setup dialog
-function openSetup() {
+const SETUP = {
+  soc: ['SoC profile', 'Which chip family the tool should assume: how it names pins and controllers.', ['soc']],
+  source: ['Kernel source', 'Files on this laptop: the kernel tree your board runs, and your board\'s .dts inside it. This is what you edit.', ['kernel_src', 'board_dts']],
+  board: ['Board connection', 'The live hardware: how the tool reaches the running board to see what is really loaded.', ['board.transport', 'board.host']],
+};
+let setupKind = 'source';
+function openSetup(kind = 'source') {
+  setupKind = kind;
+  const [title, intro] = SETUP[kind];
+  $('#setup-title').textContent = title; $('#setup-intro').textContent = intro;
+  document.querySelectorAll('#setup-form [data-sec]').forEach(d => d.classList.toggle('hidden', d.dataset.sec !== kind));
+  $('#detect-out').innerHTML = '';
   const f = $('#setup-form'), c = O.config;
   f.soc.innerHTML = O.socs.map(s => `<option value="${esc(s.id)}">${esc(s.title)}${s.status === 'starter' ? ' (starter)' : ''}</option>`).join('');
   f.soc.value = c.soc || '';
   f.kernel_src.value = c.kernel_src || ''; f.board_dts.value = c.board_dts || '';
   f['board.transport'].value = c.board.transport || 'snapshot'; f['board.host'].value = c.board.host || '';
   let vt; const revalidate = () => { clearTimeout(vt); vt = setTimeout(validateSrc, 400); };
-  f.kernel_src.oninput = revalidate; f.board_dts.oninput = revalidate; f.soc.onchange = revalidate; validateSrc();
-  const sync = () => { $('.ssh-only').classList.toggle('hidden', f['board.transport'].value !== 'ssh'); renderReach(); $('#test-out').innerHTML = ''; };
+  f.kernel_src.oninput = revalidate; f.board_dts.oninput = revalidate; f.soc.onchange = revalidate; if (kind === 'source') validateSrc();
+  const sync = () => { const k = f['board.transport'].value; $('.ssh-only').classList.toggle('hidden', k !== 'ssh');
+    $('.test-row').classList.toggle('hidden', k === 'off'); renderReach(); $('#test-out').innerHTML = ''; };
   f['board.transport'].onchange = sync; f['board.host'].oninput = renderReach; sync();
   $('#reach-help').open = !(O.status.board.scanned && !O.status.board.scanned.demo);
   $('#dlg-setup').showModal();
@@ -197,6 +220,7 @@ function renderReach() {
       <p>Then browse to <code>http://&lt;board-ip&gt;:8765</code>. <b>Only on a network you trust</b>: the page has no login.</p>`)}
     ${step(4, 'Kernel source', `<p>The kernel source usually lives on your laptop, not the board. For source checks, run the tool on the laptop with <b>ssh</b> instead.</p>`)}
   </ol>`;
+  else if (kind === 'off') h = `<p class="muted small">The tool stops contacting the board. The last scan stays visible; board-side checks show “?”. Your SSH target is kept, so reconnecting is one click on the Board card.</p>`;
   else h = `<p class="muted small">No board needed: the tool reads a saved scan. Good for learning offline, or for comparing before and after a change.</p><ol class="reach">
     ${step(1, 'Use the demo', `<p><code>snapshots/demo-imx93-frdm.json</code> has a real device tree, but its drivers, kernel config and dmesg are <b>made up</b>.</p>`)}
     ${step(2, 'Or save your own', `<p>Connect once over <b>ssh</b>, scan, then in the workspace's Board tab click <b>Save snapshot…</b>.
@@ -224,7 +248,7 @@ $('#btn-detect').onclick = () => guard(async () => {
   const f = $('#setup-form'), out = $('#detect-out'), b = $('#btn-detect');
   b.disabled = true; out.innerHTML = '<div class="muted small">looking at the board and searching your home folder for kernel trees…</div>';
   try {
-    const r = await api('/api/source/detect', { method: 'POST', body: { soc: f.soc.value } });
+    const r = await api('/api/source/detect', { method: 'POST', body: { soc: O.config.soc } });
     if (r.best) {
       f.kernel_src.value = r.best.kernel_src; if (r.best.board_dts) f.board_dts.value = r.best.board_dts;
       out.innerHTML = `<div class="chk ok"><span class="ci">✓</span><div>Filled in from the board (<code>${esc(r.board.release)}</code>, <code>${esc(r.board.compatible[0] || '')}</code>):
@@ -245,7 +269,7 @@ async function validateSrc() {
   const f = $('#setup-form'), box = $('#src-check');
   box.innerHTML = '<span class="muted small">checking the kernel source…</span>';
   try {
-    lastCheck = await api('/api/source/validate', { method: 'POST', body: { kernel_src: f.kernel_src.value, board_dts: f.board_dts.value, soc: f.soc.value } });
+    lastCheck = await api('/api/source/validate', { method: 'POST', body: { kernel_src: f.kernel_src.value, board_dts: f.board_dts.value, soc: setupKind === 'soc' ? f.soc.value : O.config.soc } });
     box.innerHTML = `<div class="small"><b>${lastCheck.ok ? '✓ Kernel source looks good' : '✗ Kernel source needs fixing'}</b></div>` + checksHtml(lastCheck.checks);
   } catch (e) { box.innerHTML = `<div class="chk error"><span class="ci">✗</span><div>Could not check: ${esc(e.message)}</div></div>`; lastCheck = null; }
 }
@@ -254,9 +278,11 @@ $('#setup-save').onclick = e => {
   e.preventDefault();
   const f = $('#setup-form');
   guard(async () => {
-    await validateSrc();
-    if (lastCheck && !lastCheck.ok && !confirm('The kernel source settings have errors (shown in red). The guide will not be able to read your files until they are fixed.\n\nSave anyway?')) return;
-    const body = {}; ['soc', 'kernel_src', 'board_dts', 'board.transport', 'board.host'].forEach(k => { body[k] = f[k].value.trim(); });
+    if (setupKind === 'source') {
+      await validateSrc();
+      if (lastCheck && !lastCheck.ok && !confirm('The kernel source settings have errors (shown in red). The guide will not be able to read your files until they are fixed.\n\nSave anyway?')) return;
+    }
+    const body = {}; SETUP[setupKind][2].forEach(k => { body[k] = f[k].value.trim(); });
     await api('/api/config/fields', { method: 'POST', body });
     $('#dlg-setup').close(); toast('saved'); await load();
   });

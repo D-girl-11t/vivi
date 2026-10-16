@@ -59,6 +59,7 @@ class Workspace:
             bcfg = dict(self.cfg.get('board') or {})
             if bcfg.get('snapshot') and not os.path.isabs(bcfg['snapshot']):
                 bcfg['snapshot'] = os.path.join(self.root, bcfg['snapshot'])
+            bcfg['last_scan'] = os.path.join(self.state_dir, 'last-scan.json')
             self.transport = make_transport(bcfg, self.state_dir)
             self._snap = None
             self.live_results.clear()
@@ -92,6 +93,8 @@ class Workspace:
             return self._snap
 
     def rescan(self) -> dict:
+        if (self.cfg.get('board') or {}).get('transport') == 'off':
+            raise RuntimeError('the board is disconnected. Press Connect on the Board card first')
         if not self.transport.live:
             self._snap = None
             snap = self.snapshot()

@@ -56,29 +56,41 @@
   </section>
 </main>
 
-<!-- setup dialog -->
+<!-- setup dialog: one section per card (SoC profile / Kernel source / Board) -->
 <dialog id="dlg-setup" class="dlg wide">
   <form method="dialog" id="setup-form">
-    <h2>Setup</h2>
-    <label>SoC profile <select name="soc"></select>
-      <span class="hint">Chip-specific knowledge: pin names, controller names, camera layout. Add one in <code>knowledge/soc/</code> for a new chip.</span></label>
-    <div class="detect-row"><button type="button" id="btn-detect" class="primary">✨ Detect from my board</button>
-      <span class="hint">Finds the kernel folder and board file on this laptop that match the connected board. No typing needed.</span></div>
-    <div id="detect-out"></div>
-    <label>Kernel source tree <input name="kernel_src" placeholder="/home/you/linux-imx" autocomplete="off">
-      <span class="hint">The kernel your board runs. Yocto: <code>tmp/work-shared/&lt;machine&gt;/kernel-source</code>.
-        Otherwise clone your vendor's tree at the tag matching <code>uname -r</code> on the board.</span></label>
-    <label>Board device-tree file (inside that tree) <input name="board_dts" placeholder="arch/arm64/boot/dts/vendor/board.dts" autocomplete="off">
-      <span class="hint">On the board, <code>cat /proc/device-tree/model</code> tells you which board; in U-Boot, <code>printenv fdtfile</code> tells you which .dtb.</span></label>
-    <div id="src-check" class="src-check"></div>
-    <label>How to reach the board <select name="board.transport">
-        <option value="ssh">ssh: over the network (recommended)</option>
-        <option value="local">local: this tool runs on the board itself</option>
-        <option value="snapshot">snapshot: offline, from a saved scan</option></select></label>
-    <label class="ssh-only">SSH target <input name="board.host" placeholder="root@192.168.1.50" autocomplete="off">
-      <span class="hint">user@address of the board. The steps below show how to find the address and set up login.</span></label>
-    <div class="test-row"><button type="button" id="btn-test">🔌 Test connection</button><span id="test-out" class="small"></span></div>
-    <details id="reach-help" class="reach-help" open><summary>How to set this up, step by step</summary><div id="reach-steps"></div></details>
+    <h2 id="setup-title">Setup</h2>
+    <p id="setup-intro" class="muted small"></p>
+
+    <div data-sec="soc">
+      <label>SoC profile <select name="soc"></select>
+        <span class="hint">Chip-specific knowledge: pin names, controller names, camera layout. Add one in <code>knowledge/soc/</code> for a new chip.</span></label>
+    </div>
+
+    <div data-sec="source">
+      <div class="detect-row"><button type="button" id="btn-detect" class="primary">✨ Detect from my board</button>
+        <span class="hint">Finds the kernel folder and board file on this laptop that match the connected board. No typing needed.</span></div>
+      <div id="detect-out"></div>
+      <label>Kernel source tree <input name="kernel_src" placeholder="/home/you/linux-imx" autocomplete="off">
+        <span class="hint">The kernel your board runs. Yocto: <code>tmp/work-shared/&lt;machine&gt;/kernel-source</code>.
+          Otherwise clone your vendor's tree at the tag matching <code>uname -r</code> on the board.</span></label>
+      <label>Board device-tree file (inside that tree) <input name="board_dts" placeholder="arch/arm64/boot/dts/vendor/board.dts" autocomplete="off">
+        <span class="hint">On the board, <code>cat /proc/device-tree/model</code> tells you which board; in U-Boot, <code>printenv fdtfile</code> tells you which .dtb.</span></label>
+      <div id="src-check" class="src-check"></div>
+    </div>
+
+    <div data-sec="board">
+      <label>How to reach the board <select name="board.transport">
+          <option value="ssh">ssh: over the network (recommended)</option>
+          <option value="local">local: this tool runs on the board itself</option>
+          <option value="snapshot">snapshot: offline, from a saved scan</option>
+          <option value="off">disconnected: keep the last scan, don't contact the board</option></select></label>
+      <label class="ssh-only">SSH target <input name="board.host" placeholder="root@192.168.1.50" autocomplete="off">
+        <span class="hint">user@address of the board. The steps below show how to find the address and set up login.</span></label>
+      <div class="test-row"><button type="button" id="btn-test">🔌 Test connection</button><span id="test-out" class="small"></span></div>
+      <details id="reach-help" class="reach-help" open><summary>How to set this up, step by step</summary><div id="reach-steps"></div></details>
+    </div>
+
     <div class="dlg-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="setup-save" value="default">Save</button></div>
   </form>
 </dialog>

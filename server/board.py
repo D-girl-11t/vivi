@@ -112,17 +112,27 @@ class SSHTransport(Transport):
     def describe(self):
         return f'ssh {self.host}'
 
+    def close(self):
+        """Close the shared connection that ssh keeps open in the background (ControlPersist)."""
+        try:
+            subprocess.run(self.base[:-1] + ['-O', 'exit', self.host], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
 
 class SnapshotTransport(Transport):
     live = False
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, label: str = 'snapshot'):
         self.path = path
+        self.label = label
 
     def run(self, cmd, timeout=30, stdin=None):
         return 1, '', 'offline snapshot mode: no board connected'
 
     def describe(self):
+        if self.label == 'off':
+            return 'disconnected'
         return f'snapshot {os.path.basename(self.path)}'
 
 
@@ -132,6 +142,8 @@ def make_transport(cfg: dict, state_dir: str) -> Transport:
         return SSHTransport(cfg['host'], cfg.get('ssh_opts'), os.path.join(state_dir, 'ssh'))
     if kind == 'local':
         return LocalTransport()
+    if kind == 'off':        # disconnected on purpose: keep showing the last real scan
+        return SnapshotTransport(cfg.get('last_scan', ''), 'off')
     return SnapshotTransport(cfg.get('snapshot', ''))
 
 
@@ -283,6 +295,8 @@ _SSH_HINTS = [
 def test_connection(cfg: dict, state_dir: str) -> dict:
     """Try the configured transport once and explain any failure in plain words."""
     kind = cfg.get('transport', 'snapshot')
+    if kind == 'off':
+        return {'ok': True, 'summary': 'Disconnected: the tool will not contact the board'}
     probe = "uname -r; cat /proc/device-tree/model 2>/dev/null | tr -d '\\0'; echo; id -u; " \
             "test -r /proc/config.gz && echo cfg; test -d /sys/kernel/debug/pinctrl && echo dbg; true"
     if kind == 'snapshot':

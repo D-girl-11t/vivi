@@ -290,6 +290,27 @@ def board_test(q, body):
     return test_connection(cfg, WS.state_dir)
 
 
+@route('POST', '/api/board/disconnect')
+def board_disconnect(q, body):
+    """Stop contacting the board. The SSH target is kept, and the last scan stays visible."""
+    if hasattr(WS.transport, 'close'):
+        WS.transport.close()
+    WS.set_cfg_fields({'board.transport': 'off'})
+    return {'ok': True}
+
+
+@route('POST', '/api/board/connect')
+def board_connect(q, body):
+    """Reconnect over SSH to the saved target. Settings only change if the board answers."""
+    host = body.get('host') or (WS.cfg.get('board') or {}).get('host')
+    if not host:
+        return {'ok': False, 'summary': 'No SSH target saved', 'fix': 'Open Board → Change and enter it'}
+    res = test_connection({'transport': 'ssh', 'host': host}, WS.state_dir)
+    if res['ok']:
+        WS.set_cfg_fields({'board.transport': 'ssh', 'board.host': host})
+    return res
+
+
 @route('GET', '/api/board/kconfig')
 def board_kconfig(q, body):
     snap = WS.snapshot() or {}
