@@ -10,9 +10,9 @@
 <header id="topbar">
   <a class="brand topnav" href="/" title="Home">⚡ Bring-up Studio</a>
   <div id="chips"></div>
-  <div class="spacer"></div>
-  <button id="btn-scan" title="Read the board's live state over ssh">⟳ Rescan board</button>
-  <button id="btn-reload-src" title="Re-read source files after you edit them">↻ Reload source</button>
+  <a class="btn" href="/" title="Home: setup, devices">⌂ Home</a>
+  <button id="btn-scan" title="Read the board's live state again (over ssh)">⟳ Rescan</button>
+  <button id="btn-reload-src" title="Re-read your source files after you edit them">↻ Reload</button>
   <button id="btn-settings" title="Edit workspace.yaml">⚙</button>
 </header>
 
@@ -71,7 +71,7 @@
     <div class="guide-head">
       <select id="periph-select"></select>
       <button id="btn-new" title="New peripheral form">＋</button>
-      <button id="btn-form" title="Edit this peripheral's form">✎ Form</button>
+      <button id="btn-form" title="Edit this device's form">✎</button>
       <button id="btn-del" title="Delete this device (moves its file to the trash)">🗑</button>
       <button id="btn-ask" class="ai-btn" title="Ask Claude about this device: where you are, what next, why">✦ Ask</button>
     </div>

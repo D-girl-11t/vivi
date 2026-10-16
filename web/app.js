@@ -71,10 +71,12 @@ function switchTab(panel, tab) {
 async function loadStatus() {
   S.status = await api('/api/status');
   const st = S.status, chips = [];
-  chips.push(`<span class="chip ${st.soc.status === 'starter' ? 'warn' : ''}">SoC: ${esc(st.soc.title || '?')}${st.soc.status === 'starter' ? ' (starter profile)' : ''}</span>`);
-  const sc = st.board.scanned;
-  chips.push(`<span class="chip ${sc ? (sc.demo ? 'warn' : 'ok') : 'warn'}">Board: ${esc(st.board.transport)}${st.board.model ? ' · ' + esc(st.board.model) : ''}${sc ? (sc.demo ? ' · DEMO' : ' · scanned ' + esc(sc.time)) : ' · not scanned'}</span>`);
-  chips.push(`<span class="chip ${st.source.ok ? 'ok' : 'warn'}" title="${esc(st.source.kernel || '')}">Source: ${esc(st.source.board_dts || 'not set')}</span>`);
+  const sc = st.board.scanned, dot = c => `<span class="cdot ${c}"></span>`;
+  chips.push(`<span class="chip" title="SoC profile: ${esc(st.soc.title || '?')}${st.soc.status === 'starter' ? ' (starter profile)' : ''}">${esc(st.soc.title || 'SoC ?')}</span>`);
+  const bstate = st.board.transport === 'disconnected' ? 'warn' : sc ? (sc.demo ? 'warn' : 'ok') : 'bad';
+  const btext = st.board.transport === 'disconnected' ? 'disconnected' : sc ? (sc.demo ? 'demo data' : (st.board.model || 'board') + ' · ' + esc((sc.time || '').slice(11, 16))) : 'not scanned';
+  chips.push(`<span class="chip" title="Board: ${esc(st.board.transport)}${st.board.model ? ' · ' + esc(st.board.model) : ''}${sc ? ' · scanned ' + esc(sc.time) : ''}">${dot(bstate)}Board: ${esc(btext)}</span>`);
+  chips.push(`<span class="chip" title="Kernel source: ${esc(st.source.kernel || 'not set')}\nBoard file: ${esc(st.source.board_dts || 'not set')}">${dot(st.source.ok ? 'ok' : 'bad')}Source: ${esc((st.source.board_dts || 'not set').split('/').pop())}</span>`);
   $('#chips').innerHTML = chips.join('');
   $('#btn-scan').disabled = false;
 }
@@ -519,7 +521,7 @@ $('#btn-settings').onclick = () => guard(async () => {
 $('#btn-scan').onclick = () => guard(async () => {
   const b = $('#btn-scan'); b.disabled = true; b.textContent = 'scanning…';
   try { const r = await api('/api/scan', { method: 'POST' }); toast(`scan done: ${r.findings.bound} bound, ${r.findings.unbound.length} unbound`); await Promise.all([loadStatus(), loadBoard()]); await loadPlan(); }
-  finally { b.disabled = false; b.textContent = '⟳ Rescan board'; }
+  finally { b.disabled = false; b.textContent = '⟳ Rescan'; }
 });
 $('#btn-reload-src').onclick = () => guard(async () => { await api('/api/source/reload', { method: 'POST' }); await Promise.all([loadSource(), loadPlan()]); toast('source re-read'); });
 
