@@ -65,7 +65,7 @@ function renderSetup() {
         <span class="muted small">(board kernel <code>${esc(src.get_source.release)}</code>${src.get_source.commit ? `, commit <code>${esc(src.get_source.commit)}</code>` : ''})</span>
         ${cmd(src.get_source.cmd)}<span class="muted small">On your laptop (≈ 300 MB). Then set Kernel source to that folder.</span></div>` : ''),
     'Used for: editing guidance, pin names, finding drivers.',
-    `<button data-act="setup" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${src.configured ? 'Change' : 'Set up'}</button>`);
+    `<button data-act="${!src.ok && live ? 'detect' : 'setup'}" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${!src.ok && live ? '✨ Detect from my board' : (src.configured ? 'Change' : 'Set up')}</button>`);
 
   h += card(brdState, 'Board', live ? 'connected' : (sc ? 'demo data' : (b.live ? 'not scanned' : 'not connected')),
     live ? kv('Model', esc(b.model || '?')) + kv('Kernel', esc(b.release || '?')) + kv('Via', `<code>${esc(b.transport)}</code>`)
@@ -134,6 +134,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (!t) return;
   e.preventDefault();
   if (t.dataset.act === 'setup') openSetup();
+  if (t.dataset.act === 'detect') { openSetup(); $('#btn-detect').click(); }
   if (t.dataset.act === 'wizard') openWizard();
   if (t.dataset.act === 'scan') guard(async () => { t.disabled = true; t.textContent = 'scanning…'; await api('/api/scan', { method: 'POST' }); await load(); toast('scan done'); });
 });
@@ -216,6 +217,26 @@ $('#btn-test').onclick = () => guard(async () => {
     out.innerHTML = r.ok
       ? `<span class="okc">✓ ${esc(r.summary)}</span>${(r.notes || []).map(n => `<div class="muted">• ${esc(n)}</div>`).join('')}`
       : `<span class="err">✗ ${esc(r.summary)}</span>${r.fix ? `<div><b>Fix:</b> ${esc(r.fix)}</div>` : ''}${r.detail ? `<div class="muted mono">${esc(r.detail)}</div>` : ''}`;
+  } finally { b.disabled = false; }
+});
+
+$('#btn-detect').onclick = () => guard(async () => {
+  const f = $('#setup-form'), out = $('#detect-out'), b = $('#btn-detect');
+  b.disabled = true; out.innerHTML = '<div class="muted small">looking at the board and searching your home folder for kernel trees…</div>';
+  try {
+    const r = await api('/api/source/detect', { method: 'POST', body: { soc: f.soc.value } });
+    if (r.best) {
+      f.kernel_src.value = r.best.kernel_src; if (r.best.board_dts) f.board_dts.value = r.best.board_dts;
+      out.innerHTML = `<div class="chk ok"><span class="ci">✓</span><div>Filled in from the board (<code>${esc(r.board.release)}</code>, <code>${esc(r.board.compatible[0] || '')}</code>):
+        ${esc(r.best.why.join(' · '))}${r.note ? `<div class="cfix">${esc(r.note)}</div>` : ''}
+        ${r.candidates.length > 1 ? `<div class="cfix">Other trees found: ${r.candidates.slice(1, 4).map(c => esc(c.kernel_src)).join(', ')}</div>` : ''}</div></div>`;
+      validateSrc();
+    } else {
+      const gs = O.status.source.get_source;
+      out.innerHTML = `<div class="chk error"><span class="ci">✗</span><div>${esc(r.error || 'nothing found')}
+        ${(r.candidates || []).length ? `<div class="cfix">Found but not matching: ${r.candidates.slice(0, 3).map(c => `${esc(c.kernel_src)} (${esc(c.version || '?')})`).join(', ')}</div>` : ''}
+        ${gs ? `<div class="cfix">Download the matching source, then press Detect again:</div>${cmd(gs.cmd)}` : ''}</div></div>`;
+    }
   } finally { b.disabled = false; }
 });
 

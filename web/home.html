@@ -62,6 +62,9 @@
     <h2>Setup</h2>
     <label>SoC profile <select name="soc"></select>
       <span class="hint">Chip-specific knowledge: pin names, controller names, camera layout. Add one in <code>knowledge/soc/</code> for a new chip.</span></label>
+    <div class="detect-row"><button type="button" id="btn-detect" class="primary">✨ Detect from my board</button>
+      <span class="hint">Finds the kernel folder and board file on this laptop that match the connected board. No typing needed.</span></div>
+    <div id="detect-out"></div>
     <label>Kernel source tree <input name="kernel_src" placeholder="/home/you/linux-imx" autocomplete="off">
       <span class="hint">The kernel your board runs. Yocto: <code>tmp/work-shared/&lt;machine&gt;/kernel-source</code>.
         Otherwise clone your vendor's tree at the tag matching <code>uname -r</code> on the board.</span></label>

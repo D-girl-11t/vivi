@@ -247,3 +247,6 @@ ol.reach { padding-left: 20px; margin: 6px 0; } ol.reach li { margin: 10px 0; } 
 .chk.error { color: #8f1d24; } .chk.warn { color: #6b4a00; }
 .cfix { color: var(--muted); font-size: 12px; word-break: break-word; }
 .setup-card .chk { font-size: 12px; }
+.detect-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.detect-row button { flex: none; }
+#detect-out .chk { background: var(--panel); border-radius: 8px; padding: 6px 8px; margin: 4px 0; }

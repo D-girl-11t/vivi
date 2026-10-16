@@ -168,3 +168,96 @@ def validate_source(kernel_src: str | None, board_dts: str | None, soc: dict, sn
                              ('Files that look closer: ' + ', '.join(sug)) if sug else 'Pick the .dts for the board you have.'))
     ok = not any(c['level'] == 'error' for c in checks)
     return {'checks': checks, 'info': info, 'ok': ok}
+
+
+# ---------------------------------------------------------------- auto-detect from the connected board
+_SKIP = {'node_modules', '.cache', '.git', 'Trash', '.local', 'snap', '.npm', '.cargo', '.rustup', 'proc', 'sys'}
+
+
+def _is_kernel_tree(d: str) -> bool:
+    return all(os.path.exists(os.path.join(d, x)) for x in ('Makefile', 'arch', 'drivers', 'include', 'Kconfig'))
+
+
+def find_kernel_trees(roots: list[str], max_depth=5, limit=40) -> list[str]:
+    """Kernel trees under the given folders (does not descend into a tree once found)."""
+    found = []
+    for root in roots:
+        root = os.path.expanduser(root)
+        if not os.path.isdir(root):
+            continue
+        for dp, dns, _ in os.walk(root):
+            depth = dp[len(root):].count(os.sep)
+            if _is_kernel_tree(dp):
+                found.append(dp)
+                dns[:] = []
+                continue
+            # Yocto keeps the kernel at tmp*/work-shared/<machine>/kernel-source: allow that deep
+            deep_ok = 'work-shared' in dp or 'tmp' in os.path.basename(dp)
+            if depth >= max_depth + (3 if deep_ok else 0):
+                dns[:] = []
+                continue
+            dns[:] = [d for d in dns if d not in _SKIP and not d.startswith('.')]
+            if len(found) >= limit:
+                break
+    return list(dict.fromkeys(found))
+
+
+def _dts_root_compat(path: str) -> list[str]:
+    try:
+        text = open(path, errors='replace').read()
+    except OSError:
+        return []
+    from .dts import strip_comments
+    text = strip_comments(text)
+    m = re.search(r'^/\s*\{(.*?)^\};', text, re.S | re.M)
+    if not m:
+        return []
+    body = re.sub(r'\{[^{}]*\}', '', re.sub(r'\{[^{}]*\}', '', m.group(1)))   # drop child nodes (two levels)
+    c = re.search(r'\bcompatible\s*=\s*([^;]+);', body)
+    return re.findall(r'"([^"]+)"', c.group(1)) if c else []
+
+
+def detect_from_board(snap: dict | None, soc: dict, roots: list[str]) -> dict:
+    """Use the connected board's kernel release and compatible to find the source tree and board file."""
+    live = snap if snap and not (snap.get('meta') or {}).get('demo') else None
+    if not live:
+        return {'ok': False, 'error': 'No real board scan yet. Connect the board and press Scan first: detection uses what the board reports.'}
+    rel = _release(live['system'].get('uname'))
+    compat = (live['system'].get('compatible') or '').split()
+    g = re.search(r'-g([0-9a-f]{7,40})$', rel or '')
+    ver = re.match(r'(\d+\.\d+\.\d+)', rel or '')
+    out = {'board': {'release': rel, 'compatible': compat, 'model': live['system'].get('model')}, 'candidates': []}
+    for t in find_kernel_trees(roots):
+        info = KernelTree(t).info()
+        head = _git_head(t) if g else None
+        score, why = 0, []
+        if g and head and head.startswith(g.group(1)):
+            score += 100; why.append(f'same git commit {g.group(1)}')
+        if ver and (info.get('version') or '').startswith(ver.group(1)):
+            score += 20; why.append(f"same version {ver.group(1)}")
+        if 'Trash' in t or t.startswith(('/tmp/', '/var/tmp/')):
+            score -= 50; why.append('in Trash or /tmp')
+        dts_hits = []
+        d = os.path.join(t, soc.get('dts_dir') or '')
+        if compat and os.path.isdir(d):
+            for f in sorted(os.listdir(d)):
+                if f.endswith('.dts'):
+                    rc = _dts_root_compat(os.path.join(d, f))
+                    if rc and rc[0] == compat[0]:
+                        dts_hits.append(os.path.join(soc.get('dts_dir'), f))
+        if dts_hits:
+            score += 50; why.append(f'has {os.path.basename(dts_hits[0])} for {compat[0]}')
+        out['candidates'].append({'kernel_src': t, 'version': info.get('version'), 'flavor': info.get('flavor'),
+                                  'board_dts': dts_hits[0] if dts_hits else None, 'score': score, 'why': why})
+    out['candidates'].sort(key=lambda c: -c['score'])
+    best = out['candidates'][0] if out['candidates'] else None
+    out['best'] = best if best and best['score'] > 0 else None
+    out['ok'] = bool(out['best'])
+    if not out['candidates']:
+        out['error'] = 'No kernel source tree found in your home folder.'
+    elif not out['best']:
+        out['error'] = f'Found {len(out["candidates"])} kernel tree(s), but none matches the board\'s kernel {rel}.'
+    elif not out['best']['board_dts']:
+        out['note'] = f'Kernel tree found, but no .dts in it declares "{compat[0] if compat else "?"}", the board\'s own name. ' \
+                      'The board may run a modified device tree whose source is elsewhere.'
+    return out

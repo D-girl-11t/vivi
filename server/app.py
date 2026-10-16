@@ -18,7 +18,7 @@ from . import ai
 from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
 from .fetch import fetch_driver
-from .validate import validate_source
+from .validate import detect_from_board, validate_source
 from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name, set_yaml_fields
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -88,6 +88,14 @@ def source_info() -> dict:
         out['get_source'] = {'release': rel, 'commit': commit, 'tag': tag, 'repo': soc['kernel_repo'],
                              'cmd': f"git clone --depth 1 -b {tag} {soc['kernel_repo']} ~/{soc['kernel_repo'].rstrip('/').split('/')[-1]}-{ver}"}
     return out
+
+
+@route('POST', '/api/source/detect')
+def source_detect(q, body):
+    """Find the kernel tree and board .dts that match the connected board (searches your home folder)."""
+    soc = KB.soc.get(body.get('soc') or WS.cfg.get('soc'), {})
+    roots = WS.cfg.get('source_search') or ['~']
+    return detect_from_board(WS.snapshot(), soc, roots)
 
 
 @route('POST', '/api/source/validate')
