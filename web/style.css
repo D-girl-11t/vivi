@@ -237,3 +237,4 @@ ol.reach { padding-left: 20px; margin: 6px 0; } ol.reach li { margin: 10px 0; } 
 .fix-btn { font-size: 11.5px; padding: 1px 8px; margin-left: 6px; border-color: var(--accent); color: var(--accent); }
 .card-problem { color: #8a5a00; background: #fff8e1; border-radius: 6px; padding: 3px 7px; }
 .net-tabs { margin: 10px 0 2px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--accent); }
+.sec-divider { border: none; border-top: 1px solid var(--line); margin: 40px 0 0; }
