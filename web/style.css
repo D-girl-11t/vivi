@@ -250,3 +250,14 @@ ol.reach { padding-left: 20px; margin: 6px 0; } ol.reach li { margin: 10px 0; } 
 .detect-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
 .detect-row button { flex: none; }
 #detect-out .chk { background: var(--panel); border-radius: 8px; padding: 6px 8px; margin: 4px 0; }
+.boot-row { cursor: pointer; } .boot-row .bn { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.boot-row.boots { font-weight: 600; } .boot-row.sel { background: var(--panel2); outline: 1px solid var(--accent); }
+.boot-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.boot-actions b { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.cmp-head { display: flex; gap: 14px; align-items: center; margin: 6px 0; } .cmp-head .arrow { font-size: 20px; color: var(--muted); }
+.cmp h4 { margin: 14px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.cmp-row, .cmp-path { font-family: var(--mono); font-size: 12.5px; padding: 1px 0; }
+.cmp-row.add, .cmp .add { color: var(--pass); } .cmp-row.rm, .cmp .rm { color: var(--fail); }
+.cmp-node { margin: 6px 0; padding: 4px 8px; border-left: 3px solid var(--line); }
+.cmp-prop { font-family: var(--mono); font-size: 12px; padding-left: 14px; word-break: break-all; }
+.callout.ok { border-left-color: var(--pass); }

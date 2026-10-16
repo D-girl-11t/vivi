@@ -62,6 +62,7 @@ $$('.tabs').forEach(nav => nav.addEventListener('click', e => {
   switchTab(nav.dataset.for, b.dataset.tab);
 }));
 function switchTab(panel, tab) {
+  if (panel === 'left' && tab === 'boot' && !S.boot) guard(loadBoot);
   $$(`.tabs[data-for="${panel}"] button`).forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
   $$(`#${panel} > .tabbody`).forEach(x => x.classList.toggle('hidden', x.id !== `${panel}-${tab}`));
 }
@@ -168,6 +169,133 @@ $('#pin-q').addEventListener('input', e => { clearTimeout(pinTimer); pinTimer = 
     ${(r.used[pad] || []).map(u => `<div class="small" style="color:var(--unknown)">in use: ${esc(u)}</div>`).join('')}
     ${fns.map(f => `<div class="row">${esc(f)}</div>`).join('')}</details>`).join('') || 'no match';
 }), 250); });
+
+// ------------------------------------------------------------ left: boot files on the board
+const LIVE = '(live: what the board booted)';
+async function loadBoot(detect = true) {
+  const el = $('#left-boot');
+  el.innerHTML = `<p class="muted small">${detect ? 'reading the boot partition and working out which file boots (compares each one with the live tree)…' : 'reading the boot partition…'}</p>`;
+  try { S.boot = await api('/api/boot/files' + (detect ? '?detect=1' : '')); }
+  catch (e) { el.innerHTML = `<div class="callout warn small">${esc(e.message)}</div>`; S.boot = null; return; }
+  renderBoot();
+}
+function bootsName() { const c = S.boot?.closest; return c && c.length && (c.length < 2 || c[0].diff < c[1].diff) ? c[0].name : null; }
+function renderBoot() {
+  const b = S.boot, el = $('#left-boot'), boots = b.fdtfile || bootsName();
+  if (b.error) { el.innerHTML = `<div class="callout warn small">${esc(b.error)}</div>`; return; }
+  const fmt = t => new Date(t * 1000).toISOString().slice(0, 10);
+  // the names share a long prefix (imx93-11x11-frdm…): show the part that tells them apart
+  const names = b.files.map(f => f.name); let pre = names[0] || '';
+  names.forEach(n => { while (pre && !n.startsWith(pre)) pre = pre.slice(0, -1); });
+  const cut = pre.length > 10 ? pre.lastIndexOf('-', pre.length - 1) + 1 : 0;
+  const short = n => cut > 0 ? '…' + n.slice(cut) : n;
+  el.innerHTML = `<div class="small muted">${esc(b.dir)} · ${b.files.length} files${b.fw_setenv ? '' : ' · no fw_setenv: switching swaps files (with a backup)'}</div>
+    ${b.warning ? `<div class="callout warn small">${esc(b.warning)}</div>` : ''}
+    <div class="actions"><button class="primary" data-bact="install" title="Build the Kernel source board file and upload it under a new name">⬆ Install from my source</button>
+      <button data-bact="cmp-src" title="Your Kernel source board file vs what the board booted">Source vs live</button><button data-bact="reload">↻</button></div>
+    <p class="small muted">${boots ? `U-Boot loads <b>${esc(boots)}</b> ${b.fdtfile ? '(fdtfile)' : '(the closest match to the live tree)'}.` : 'Could not tell which file boots.'} Click a file for actions.</p>
+    <div id="boot-list">${b.files.map(f => `<div class="row boot-row ${f.name === boots ? 'boots' : ''}" data-bfile="${esc(f.name)}" title="${esc(f.name)}">
+      <span class="dot ${f.name === boots ? 'okay' : (f.kind === 'dtb' ? '' : 'disabled')}"></span><span class="bn">${esc(short(f.name))}</span>
+      <span class="muted">${(f.size / 1024).toFixed(0)}K · ${fmt(f.mtime)}</span></div>`).join('')}</div>
+    <div id="boot-act"></div>`;
+  el.onclick = onBootClick;
+}
+function onBootClick(e) {
+  const t = e.target.closest('[data-bact],[data-bfile]'); if (!t) return;
+  const boots = S.boot.fdtfile || bootsName();
+  if (t.dataset.bfile) {
+    const f = t.dataset.bfile;
+    $$('.boot-row').forEach(r => r.classList.toggle('sel', r === t));
+    $('#boot-act').innerHTML = `<div class="boot-actions"><b>${esc(f)}</b>
+      <button data-bact="cmp" data-a="${esc(LIVE)}" data-b="${esc(f)}">Compare with what booted</button>
+      ${boots && f !== boots ? `<button data-bact="cmp" data-a="${esc(boots)}" data-b="${esc(f)}">Compare with ${esc(boots)}</button>` : ''}
+      <button data-bact="cmp" data-a="${esc(f)}" data-b="source">Compare with my source</button>
+      ${boots && f !== boots && /\.dtb(\.|$)|\.dtb$/.test(f) ? `<button class="primary" data-bact="switch" data-use="${esc(f)}">Boot this one…</button>` : ''}</div>`;
+    return;
+  }
+  const a = t.dataset.bact;
+  if (a === 'reload') return guard(() => loadBoot(true));
+  if (a === 'cmp-src') return compareDtb(LIVE, 'source');
+  if (a === 'cmp') return compareDtb(t.dataset.a, t.dataset.b);
+  if (a === 'switch') return switchDtb(t.dataset.use);
+  if (a === 'install') return installDtb();
+}
+const nice = n => n === LIVE ? 'what the board booted' : n === 'source' ? 'your Kernel source build' : n;
+async function compareDtb(a, b) {
+  setView(`<div class="bar"><b>Comparing ${esc(nice(a))} → ${esc(nice(b))}</b></div>`, '<p class="muted">fetching and decompiling…' + (a === 'source' || b === 'source' ? ' (building your source first)' : '') + '</p>');
+  try {
+    const r = await api('/api/boot/compare', { method: 'POST', body: { a, b } });
+    const hide = x => x.uboot ? ' uboot' : '';
+    const sec = (title, items, fn) => items.length ? `<h4>${title} <span class="muted">${items.length}</span></h4>${items.map(fn).join('')}` : '';
+    const side = (x, n) => `<div><b>${esc(nice(n))}</b><br><span class="muted small">${esc(x.model)} · ${esc(x.compatible[0] || '')} · ${x.nodes} nodes · ${x.labels ? 'has labels' : '<span style="color:var(--unknown)">no labels (built without -@: overlays won\'t apply)</span>'}</span></div>`;
+    setView(`<div class="bar"><b>${esc(nice(a))} → ${esc(nice(b))}</b></div>
+      <div class="cmp-head">${side(r.a, a)}<div class="arrow">→</div>${side(r.b, b)}</div>
+      <p class="small">${r.counts.real ? `<b>${r.counts.real}</b> real difference${r.counts.real > 1 ? 's' : ''}` : '<b>No real differences</b>'}
+        <label class="small" style="margin-left:12px"><input type="checkbox" id="show-uboot"> show what the bootloader adds at boot (${r.counts.removed + r.counts.added + r.counts.changed - r.counts.real})</label></p>`,
+      `<div class="cmp">${sec('Added nodes', r.added, x => `<div class="cmp-row add${hide(x)}">+ ${esc(x.path)}</div>`)}
+        ${sec('Removed nodes', r.removed, x => `<div class="cmp-row rm${hide(x)}">− ${esc(x.path)}</div>`)}
+        ${sec('Changed nodes', r.changed, c => `<div class="cmp-node${hide(c)}"><div class="cmp-path">~ ${esc(c.path)}</div>${c.props.map(p => `<div class="cmp-prop${p.uboot ? ' uboot' : ''}">
+          <code>${esc(p.prop)}</code>: <span class="rm">${p.a === null ? '<i>absent</i>' : esc(p.a || '(set)')}</span> → <span class="add">${p.b === null ? '<i>absent</i>' : esc(p.b || '(set)')}</span></div>`).join('')}</div>`)}
+        ${r.counts.real ? '' : '<p class="muted">The two trees describe the same hardware.</p>'}</div>`);
+    const tog = () => $$('.cmp .uboot').forEach(x => x.classList.toggle('hidden', !$('#show-uboot').checked));
+    $('#show-uboot').onchange = tog; tog();
+  } catch (e) { setView(`<div class="bar"><b>Compare failed</b></div>`, `<div class="callout bad">${esc(e.message)}</div>`); }
+}
+async function installDtb() {
+  const name = prompt('Upload your Kernel source build to the board under this NEW name (nothing that boots is touched):',
+    (S.status.source.board_dts || 'board.dts').split('/').pop().replace(/\.dts$/, '') + '-' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/(\d{8})(\d{4})/, '$1-$2') + '.dtb');
+  if (!name) return;
+  setView(`<div class="bar"><b>Install ${esc(name)}</b></div>`, '<p class="muted">building the .dtb from your source, then uploading…</p>');
+  try {
+    const r = await api('/api/boot/install', { method: 'POST', body: { name } });
+    setView(`<div class="bar"><b>✓ Installed ${esc(r.name)}</b></div>`,
+      `<p>Built <code>${esc(r.build.rel)}</code> (${(r.build.size / 1024).toFixed(0)} KB, labels kept) and uploaded it as <code>${esc(r.path)}</code>.
+       <b>Nothing that boots has changed yet.</b></p>
+       ${r.build.warnings.length ? `<details><summary class="small">${r.build.warnings.length} dtc warnings</summary><pre class="raw">${esc(r.build.warnings.join('\n'))}</pre></details>` : ''}
+       <div class="actions"><button data-x="cmp">Compare it with what booted</button><button class="primary" data-x="switch">Boot it…</button></div>`);
+    $('#view-body [data-x="cmp"]').onclick = () => compareDtb(LIVE, r.name);
+    $('#view-body [data-x="switch"]').onclick = async () => { await loadBoot(true); switchDtb(r.name); };
+    await loadBoot(false);
+  } catch (e) { setView(`<div class="bar"><b>Install failed</b></div>`, `<div class="callout bad">${esc(e.message)}</div>`); }
+}
+async function switchDtb(use) {
+  const b = S.boot, target = b.fdtfile || bootsName();
+  if (!target) return toast('Could not tell which file boots: press ↻ in the Boot tab first', 6000);
+  const how = b.fw_setenv ? `U-Boot's fdtfile will be set to ${use}.`
+    : `U-Boot loads ${target}. It will be BACKED UP to ${target}.bs-<date> and replaced by a copy of ${use}.`;
+  if (!confirm(`Boot ${use}?\n\n${how}\n\nThe change takes effect after a reboot. If the board doesn't come back, the exact U-Boot rescue commands are shown next.`)) return;
+  try {
+    const r = await api('/api/boot/switch', { method: 'POST', body: { target, use } });
+    const rescue = `<ol class="small">${r.rescue.map(x => `<li><code>${esc(x)}</code></li>`).join('')}</ol>`;
+    setView(`<div class="bar"><b>✓ Next boot uses ${esc(use)}</b></div>`,
+      `<p>${r.method === 'swap' ? `Original kept as <code>${esc(r.backup)}</code>.` : `Previous fdtfile: <code>${esc(r.previous)}</code>.`}
+        Undo from Linux: <code>${esc(r.undo_linux)}</code></p>
+       <div class="callout"><b>If the board doesn't come back</b> (keep minicom open to watch it boot):${rescue}</div>
+       <div class="actions"><button class="primary" data-x="reboot">⟲ Reboot now and check</button></div><div id="reboot-out"></div>`);
+    $('#view-body [data-x="reboot"]').onclick = e => rebootAndCheck(e.target, rescue);
+    await loadBoot(false);
+  } catch (e) { toast('⚠ ' + e.message, 8000); }
+}
+async function rebootAndCheck(btn, rescue) {
+  btn.disabled = true; const out = $('#reboot-out');
+  await api('/api/boot/reboot', { method: 'POST' });
+  const t0 = Date.now(); let up = false, wentDown = false;
+  while (Date.now() - t0 < 240000) {
+    await new Promise(r => setTimeout(r, 5000));
+    const s = Math.round((Date.now() - t0) / 1000);
+    const r = await api('/api/board/test', { method: 'POST', body: { transport: 'ssh', host: S.status.board.transport.replace(/^ssh /, '') } }).catch(() => ({ ok: false }));
+    if (!r.ok) wentDown = true;
+    out.innerHTML = `<p class="muted">${r.ok ? (wentDown ? 'back up' : 'still going down…') : `waiting for the board… ${s}s`}</p>`;
+    if (r.ok && wentDown) { up = true; break; }
+  }
+  if (!up) { out.innerHTML = `<div class="callout bad"><b>The board did not come back within 4 minutes.</b> Check minicom; use the rescue steps:${rescue}</div>`; btn.disabled = false; return; }
+  await api('/api/scan', { method: 'POST' });
+  await Promise.all([loadStatus(), loadBoard()]); await loadPlan();
+  out.innerHTML = `<div class="callout ok"><b>✓ The board is back and was rescanned.</b> ${esc(S.board.system?.model || '')}<br>
+    Check the guide's <b>Deploy</b> and <b>Probe</b> steps on the right, or <a href="#" id="cmp-after">compare what booted with your source</a>.</div>`;
+  $('#cmp-after').onclick = e => { e.preventDefault(); compareDtb(LIVE, 'source'); };
+  S.boot = null;
+}
 
 // ------------------------------------------------------------ center viewer
 function setView(head, body) { switchTab('center', 'view'); $('#view-head').innerHTML = head; $('#view-body').innerHTML = body; $('#center-view').scrollTop = 0; }

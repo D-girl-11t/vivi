@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import subprocess
+import time
 import traceback
 
 import yaml
@@ -17,6 +18,8 @@ from urllib.parse import parse_qs, urlparse
 from . import ai
 from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
+from . import boot as bootf
+from .build import build_dtb, fetch_dts
 from .fetch import fetch_driver
 from .validate import detect_from_board, validate_source
 from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name, set_yaml_fields
@@ -309,6 +312,121 @@ def board_connect(q, body):
     if res['ok']:
         WS.set_cfg_fields({'board.transport': 'ssh', 'board.host': host})
     return res
+
+
+# ---------------------------------------------------------------- boot files on the board
+def _live_transport():
+    if not WS.transport.live:
+        raise ApiError('the board is not connected. Connect it on the home page first')
+    return WS.transport
+
+
+_BOOT_CACHE: dict = {}
+
+
+@route('GET', '/api/boot/files')
+def boot_files(q, body):
+    t = _live_transport()
+    info = bootf.boot_info(t)
+    if q.get('detect') and info.get('dir'):
+        key = tuple((f['name'], f['size'], f['mtime']) for f in info['files'])
+        if _BOOT_CACHE.get('key') != key:
+            _BOOT_CACHE.update(key=key, closest=bootf.closest_to_live(t, info))
+        info['closest'] = _BOOT_CACHE['closest']
+    info['live_name'] = bootf.LIVE
+    return info
+
+
+def _blob(t, info, name):
+    if name == 'source':                     # freshly built from the Kernel source board file
+        soc = KB.soc.get(WS.cfg.get('soc'), {})
+        r = build_dtb(WS.ktree.root, WS.dts.rel(WS.dts.board_dts), soc)
+        return open(r['path'], 'rb').read()
+    return bootf.fetch(t, info, name)
+
+
+@route('POST', '/api/boot/compare')
+def boot_compare(q, body):
+    t = _live_transport()
+    info = bootf.boot_info(t)
+    try:
+        return bootf.compare(_blob(t, info, body['a']), _blob(t, info, body['b']))
+    except (ValueError, RuntimeError) as e:
+        raise ApiError(str(e))
+
+
+@route('POST', '/api/boot/install')
+def boot_install(q, body):
+    """Build the Kernel source board file and upload it under a new name (nothing that boots is touched)."""
+    t = _live_transport()
+    info = bootf.boot_info(t)
+    if not (WS.ktree and WS.dts and WS.dts.ok):
+        raise ApiError('Kernel source is not set up: open Kernel source on the home page')
+    soc = KB.soc.get(WS.cfg.get('soc'), {})
+    try:
+        b = build_dtb(WS.ktree.root, WS.dts.rel(WS.dts.board_dts), soc)
+        name = body.get('name') or (os.path.splitext(os.path.basename(b['path']))[0] + '-' + time.strftime('%Y%m%d-%H%M') + '.dtb')
+        res = bootf.install(t, info, open(b['path'], 'rb').read(), name)
+    except (ValueError, RuntimeError) as e:
+        raise ApiError(str(e))
+    bootf.history_add(WS.state_dir, {'action': 'install', 'name': name, 'from': b['rel']})
+    return dict(res, name=name, build=b)
+
+
+@route('POST', '/api/boot/switch')
+def boot_switch(q, body):
+    t = _live_transport()
+    info = bootf.boot_info(t)
+    try:
+        res = bootf.switch(t, info, body['target'], body['use'])
+    except (ValueError, RuntimeError) as e:
+        raise ApiError(str(e))
+    bootf.history_add(WS.state_dir, dict(res, action='switch'))
+    _BOOT_CACHE.clear()
+    return res
+
+
+@route('POST', '/api/boot/reboot')
+def boot_reboot(q, body):
+    t = _live_transport()
+    if hasattr(t, 'close'):
+        t.close()
+    t.run('(sleep 1; reboot) >/dev/null 2>&1 &', timeout=15)
+    return {'ok': True}
+
+
+@route('GET', '/api/boot/history')
+def boot_history(q, body):
+    try:
+        return {'items': json.load(open(os.path.join(WS.state_dir, 'boot-history.json')))}
+    except (OSError, ValueError):
+        return {'items': []}
+
+
+# ---------------------------------------------------------------- source: build, and .dts from a link
+@route('POST', '/api/source/build')
+def source_build(q, body):
+    if not (WS.ktree and WS.dts and WS.dts.ok):
+        raise ApiError('Kernel source is not set up')
+    try:
+        return build_dtb(WS.ktree.root, WS.dts.rel(WS.dts.board_dts), KB.soc.get(WS.cfg.get('soc'), {}))
+    except (ValueError, RuntimeError) as e:
+        raise ApiError(str(e))
+
+
+@route('POST', '/api/source/fetch-dts')
+def source_fetch_dts(q, body):
+    """Download a .dts from a link into the kernel tree (new name), then check it like any board file."""
+    ks = body.get('kernel_src') or WS.cfg.get('kernel_src')
+    soc = KB.soc.get(WS.cfg.get('soc'), {})
+    if not (ks and os.path.isdir(os.path.expanduser(ks))):
+        raise ApiError('Set the Kernel source folder first: the file is saved inside it')
+    try:
+        r = fetch_dts(body.get('url', ''), body.get('name', ''), os.path.expanduser(ks), soc)
+    except (ValueError, RuntimeError) as e:
+        raise ApiError(str(e))
+    r['check'] = validate_source(ks, r['path'], soc, WS.snapshot())
+    return r
 
 
 @route('GET', '/api/board/kconfig')

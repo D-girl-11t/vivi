@@ -136,3 +136,17 @@ tools/   make_demo_snapshot.py
 - Remoteproc/RPMsg path for real-time work on the M33 (fast encoders, motor control)
 - DT overlay (.dtso) output, so you can try changes without rebuilding the base dtb
 - A Qualcomm SoC profile
+
+## Boot files (workspace → Boot tab)
+
+Lists every `.dtb` in the board's boot partition and works out which one U-Boot loads
+(from `fdtfile`, or by comparing each file with the live tree in `/sys/firmware/fdt`).
+Compare any two (or your Kernel source build) node by node: phandle renumbering is
+ignored, and what the bootloader adds at boot (bootargs, MACs, memory, OP-TEE) is hidden
+unless asked for. **Install from my source** builds the board `.dtb` with labels (`-@`)
+and uploads it under a new name. **Boot this one** sets `fdtfile` when `fw_setenv` exists,
+otherwise backs up the loaded file and swaps it in. It always shows the undo command and
+the U-Boot rescue steps, and **Reboot now and check** waits for the board and rescans.
+
+In Setup → Kernel source, **Use a .dts from the internet** downloads a board file from a
+link into your tree (new name, registered in the Makefile) and checks it.

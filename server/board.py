@@ -73,6 +73,21 @@ class Transport:
     def describe(self) -> str:
         return self.__class__.__name__
 
+    # binary file transfer (device-tree blobs); paths are quoted here, callers pass plain paths
+    def read_bytes(self, path: str, timeout: int = 60) -> bytes:
+        p = subprocess.run(self._argv(f'cat {shlex.quote(path)}'), capture_output=True, timeout=timeout)
+        if p.returncode != 0:
+            raise RuntimeError(p.stderr.decode(errors='replace').strip() or f'cannot read {path}')
+        return p.stdout
+
+    def write_bytes(self, path: str, data: bytes, timeout: int = 60):
+        p = subprocess.run(self._argv(f'cat > {shlex.quote(path)} && sync'), input=data, capture_output=True, timeout=timeout)
+        if p.returncode != 0:
+            raise RuntimeError(p.stderr.decode(errors='replace').strip() or f'cannot write {path}')
+
+    def _argv(self, cmd: str) -> list[str]:
+        raise NotImplementedError
+
 
 class LocalTransport(Transport):
     def run(self, cmd, timeout=30, stdin=None):
@@ -84,6 +99,9 @@ class LocalTransport(Transport):
 
     def describe(self):
         return 'local'
+
+    def _argv(self, cmd):
+        return ['sh', '-c', cmd]
 
 
 class SSHTransport(Transport):
@@ -111,6 +129,9 @@ class SSHTransport(Transport):
 
     def describe(self):
         return f'ssh {self.host}'
+
+    def _argv(self, cmd):
+        return self.base + [cmd]
 
     def close(self):
         """Close the shared connection that ssh keeps open in the background (ControlPersist)."""

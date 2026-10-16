@@ -77,6 +77,13 @@
       <label>Board device-tree file (inside that tree) <input name="board_dts" placeholder="arch/arm64/boot/dts/vendor/board.dts" autocomplete="off">
         <span class="hint">On the board, <code>cat /proc/device-tree/model</code> tells you which board; in U-Boot, <code>printenv fdtfile</code> tells you which .dtb.</span></label>
       <div id="src-check" class="src-check"></div>
+      <details class="reach-help" id="dts-link"><summary>🌐 Use a .dts from the internet</summary>
+        <p class="muted small">Paste a link to a board's <code>.dts</code> (a GitHub file page or a raw link). It's saved into your kernel tree's
+          device-tree folder under a new name, registered in its Makefile, selected above, and checked against your tree and board.</p>
+        <label>Link <input id="dts-url" placeholder="https://github.com/<user>/<repo>/blob/<branch>/arch/arm64/boot/dts/<vendor>/<board>.dts" autocomplete="off"></label>
+        <label>Save as <input id="dts-name" placeholder="imx93-11x11-frdm-mything" autocomplete="off"><span class="hint">A new name; existing files are never overwritten.</span></label>
+        <button type="button" id="btn-dts-fetch">⬇ Download and use it</button><div id="dts-out"></div>
+      </details>
     </div>
 
     <div data-sec="board">

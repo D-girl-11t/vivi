@@ -23,9 +23,11 @@
       <button data-tab="board" class="active">Board</button>
       <button data-tab="source">Source</button>
       <button data-tab="pins">Pins</button>
+      <button data-tab="boot" title="Device-tree files on the board: which boots, compare, install, switch">Boot</button>
     </nav>
     <div class="tabbody" id="left-board"></div>
     <div class="tabbody hidden" id="left-source"></div>
+    <div class="tabbody hidden" id="left-boot"><p class="muted small">Device-tree files on the board's boot partition. Opens when you click the tab.</p></div>
     <div class="tabbody hidden" id="left-pins">
       <input id="pin-q" placeholder="pad or function, e.g. GPIO_IO08 or SAI3" autocomplete="off">
       <div id="pin-results" class="muted small">Every function a pad can carry, read from the SoC pin header, and whether your board already uses that pad.</div>

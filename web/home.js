@@ -264,6 +264,22 @@ $('#btn-detect').onclick = () => guard(async () => {
   } finally { b.disabled = false; }
 });
 
+$('#dts-url').oninput = e => { const n = $('#dts-name'); if (!n.dataset.touched) n.value = (e.target.value.split('/').pop() || '').replace(/\.dts.*$/, '').replace(/[^\w.+-]/g, '') + (e.target.value ? '-web' : ''); };
+$('#dts-name').oninput = e => { e.target.dataset.touched = 1; };
+$('#btn-dts-fetch').onclick = () => guard(async () => {
+  const f = $('#setup-form'), out = $('#dts-out'), b = $('#btn-dts-fetch');
+  b.disabled = true; out.innerHTML = '<span class="muted small">downloading…</span>';
+  try {
+    const r = await api('/api/source/fetch-dts', { method: 'POST', body: { url: $('#dts-url').value.trim(), name: $('#dts-name').value.trim(), kernel_src: f.kernel_src.value.trim() } });
+    f.board_dts.value = r.path;
+    out.innerHTML = `<div class="chk ${r.check.ok ? 'ok' : 'warn'}"><span class="ci">${r.check.ok ? '✓' : '⚠'}</span><div>Saved as <code>${esc(r.path)}</code> (${esc(r.kind)} file, ${r.bytes} bytes) and selected above.
+      ${r.kind !== 'board' ? `<div class="cfix">This is ${r.kind === 'overlay' ? 'an overlay (/plugin/)' : 'not a complete board file'}: it can't be used as the board file by itself.</div>` : ''}
+      <div class="cfix">Press Save to use it. The checks above tell you whether it fits your tree and your board.</div></div></div>`;
+    validateSrc();
+  } catch (e) { out.innerHTML = `<div class="chk error"><span class="ci">✗</span><div>${esc(e.message)}</div></div>`; }
+  finally { b.disabled = false; }
+});
+
 let lastCheck = null;
 async function validateSrc() {
   const f = $('#setup-form'), box = $('#src-check');
