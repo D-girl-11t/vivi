@@ -17,7 +17,8 @@ from urllib.parse import parse_qs, urlparse
 from . import ai
 from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
-from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name
+from .fetch import fetch_driver
+from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name, set_yaml_fields
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(os.path.dirname(HERE), 'web')
@@ -131,7 +132,7 @@ def overview(q, body):
                            'done': sum(s['result']['status'] == 'pass' for s in pl['steps']),
                            'next': cur and {'title': cur['title'], 'layer': cur['layer']},
                            'needs_driver': port.get('state') == 'missing' and not port.get('src_ok') and 'compatible' not in it['unfilled'],
-                           'problems': pl['problems']})
+                           'problems': [p['text'] for p in pl['problems']]})
             except Exception as e:   # one broken form must not break the homepage
                 it['error'] = f'{type(e).__name__}: {e}'
         items.append(it)
@@ -172,11 +173,13 @@ def wizard_check(q, body):
             req = driver_requirements(f.read())
     guess = WS.ktree.guess_kind(binding and binding['file'], driver and driver['file'])
     bus = (req or {}).get('bus')
-    if bus == 'i2c' and req and req.get('endpoint') and guess.get('subsystem') == 'v4l2':
+    if bus == 'i2c' and req and req.get('video_sensor'):
         bus = 'csi2'            # an I2C-controlled sensor with a video endpoint is a CSI camera
     elif bus == 'platform' and guess.get('subsystem') == 'alsa':
         bus = 'sai'             # codec without a control bus: only the I2S/SAI wires
-    return {'compatible': c, 'binding': binding and {k: binding[k] for k in ('file', 'title', 'required')},
+    vendors = WS.ktree.vendor_prefixes()
+    return {'compatible': c, 'vendor_known': (c.split(',')[0] in vendors) if (',' in c and vendors) else None,
+            'binding': binding and {k: binding[k] for k in ('file', 'title', 'required')},
             'driver': driver and {k: driver.get(k) for k in ('file', 'name', 'config')},
             'state': 'ok' if driver and driver.get('config') else ('not_built' if driver else 'missing'),
             'guess': {'bus': bus if bus in KB.bus else None, 'subsystem': guess.get('subsystem')}}
@@ -379,6 +382,48 @@ def put_periph(q, body):
     return {'ok': True}
 
 
+@route('POST', '/api/peripheral/fields')
+def periph_fields(q, body):
+    """Apply a suggested fix: set a few top-level form fields, keeping the file's comments."""
+    allowed = {'compatible', 'bus', 'subsystem', 'driver_src', 'driver_url', 'driver_dir', 'config'}
+    fields = {k: v for k, v in (body.get('fields') or {}).items() if k in allowed}
+    WS.save_periph(body['id'], set_yaml_fields(WS.periph_text(body['id']), fields))
+    return {'ok': True, 'set': fields}
+
+
+@route('POST', '/api/driver/fetch')
+def driver_fetch(q, body):
+    """driver_src is a web link: download the .c into drivers-extra/ and point the form at it."""
+    from .planner import build_context
+    pid = body['id']
+    form = WS.periph_form(pid)
+    soc = KB.soc.get(WS.cfg.get('soc'), {})
+    port = build_context(form, KB, soc, WS)['port']
+    if not port.get('src_url'):
+        raise ApiError('driver_src is not a web link')
+    dirs = [port['dir']] + [s.get('driver_dir') for s in KB.subsystem.values() if s.get('driver_dir')]
+    res = fetch_driver(port['src_url'], port['module'], dirs, os.path.join(WS.root, 'drivers-extra'))
+    if not res['ok']:
+        raise ApiError('could not find the driver file. Tried: ' + '; '.join(res['tried'][:6]) +
+                       '. Open the link in a browser, find the .c file, and paste that file\'s link instead')
+    rel = os.path.relpath(res['path'], WS.root)
+    WS.save_periph(pid, set_yaml_fields(WS.periph_text(pid), {'driver_src': rel, 'driver_url': port['src_url']}))
+    return {'saved': rel, 'from': res['url'], 'compatibles': res['compatibles']}
+
+
+@route('DELETE', '/api/peripheral')
+def delete_periph(q, body):
+    return {'trashed': WS.delete_periph(q['id'])}
+
+
+@route('POST', '/api/peripheral/restore')
+def restore_periph(q, body):
+    try:
+        return {'id': WS.restore_periph(body['name'])}
+    except FileExistsError as e:
+        raise ApiError(str(e))
+
+
 @route('POST', '/api/peripheral/new')
 def new_periph(q, body):
     pid = safe_name(body.get('id') or 'new-device')
@@ -475,6 +520,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self): self._dispatch('GET')
     def do_POST(self): self._dispatch('POST')
     def do_PUT(self): self._dispatch('PUT')
+    def do_DELETE(self): self._dispatch('DELETE')
 
 
 def main():

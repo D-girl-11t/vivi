@@ -85,6 +85,9 @@ steps:
       	compatible = "{{ dev.compatible }}";
       	reg = <{{ dev.reg_hex }}>;
       	clocks = {{ dev.connection.clock or ('<&' ~ dev.label ~ '_xclk>') }};
+      {%- if driver_req and driver_req.clock_names %}
+      	clock-names = "{{ driver_req.clock_names|join('", "') }}";
+      {%- endif %}
       {%- for s in dev.supplies_list %}
       	{{ s }}-supply = <{{ (dev.supplies or {}).get(s) or ('&' ~ dev.label ~ '_' ~ s|lower) }}>;
       {%- endfor %}

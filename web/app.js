@@ -229,7 +229,7 @@ function renderPlan() {
     (sm.driver ? ` · driver <code>${esc(sm.driver.name)}</code>` : '') + (sm.controller?.label ? ` · controller <code>&${esc(sm.controller.label)}</code>` : '') +
     (sm.binding ? ` · <span class="filelink" data-file="${esc(sm.binding.file)}">binding</span>` : '') +
     (sm.driver?.file ? ` · <span class="filelink" data-file="${esc(sm.driver.file)}" data-line="${sm.driver.line || 1}">driver source</span>` : '') +
-    p.problems.map(x => `<div class="problem">⚠ ${esc(x)}</div>`).join('');
+    p.problems.map((x, i) => `<div class="problem">⚠ ${esc(x.text)}${x.action === 'fetch_driver' ? ` <button class="fix-btn" data-fetch="1">⬇ Download driver</button>` : ''}${x.fix ? ` <button class="fix-btn" data-fix="${i}">Apply fix: ${esc(Object.entries(x.fix).map(([k, v]) => `${k}: ${v}`).join(', '))}</button>` : ''}</div>`).join('');
   $('#steps').innerHTML = p.steps.map((s, i) => stepHtml(s, i)).join('');
   setupLive(sm.live);
 }
@@ -246,6 +246,7 @@ function stepHtml(s, i) {
     if (s.command) b += `<h4>Command</h4>${snipBlock(s.command)}`;
     b += `<div class="result ${r.status}"><b>${ICON[r.status]} ${r.status}</b> ${esc(r.detail)}</div>`;
     b += `<div class="actions"><button class="primary" data-check="${esc(s.id)}">Check</button>`;
+    if ((s.actions || []).includes('fetch_driver')) b += `<button class="primary" data-fetch="1">⬇ Download driver</button>`;
     if (s.examples) b += `<button data-examples="${esc(s.id)}">Examples from other boards</button>`;
     b += `<button data-ask="${esc(s.id)}" class="ai-btn" title="Ask Claude about this step, with the evidence attached">✦ Ask Claude</button>`;
     b += r.status === 'pass' && /marked done/.test(r.detail) ? `<button data-manual="${esc(s.id)}" data-done="">Undo done</button>`
@@ -273,6 +274,15 @@ $('#right').addEventListener('click', e => {
   if (ck) { guard(async () => { ck.disabled = true; ck.textContent = 'checking…'; await api('/api/source/reload', { method: 'POST' }); await loadPlan(ck.dataset.check); const s = S.plan.steps.find(x => x.id === ck.dataset.check); toast(`${ICON[s.result.status]} ${s.result.status}`); }); return; }
   const mn = t.closest('[data-manual]');
   if (mn) { guard(async () => { await api('/api/manual', { method: 'POST', body: { id: S.pid, step: mn.dataset.manual, done: mn.dataset.done ? true : null } }); await loadPlan(); }); return; }
+  const fx = t.closest('[data-fix]');
+  if (fx) { guard(async () => { const fix = S.plan.problems[+fx.dataset.fix].fix;
+    await api('/api/peripheral/fields', { method: 'POST', body: { id: S.pid, fields: fix } });
+    toast('form updated: ' + Object.entries(fix).map(([k, v]) => `${k}: ${v}`).join(', ')); await loadPeripherals(S.pid); }); return; }
+  const fe = t.closest('[data-fetch]');
+  if (fe) { guard(async () => { fe.disabled = true; fe.textContent = 'downloading…';
+    try { const r = await api('/api/driver/fetch', { method: 'POST', body: { id: S.pid } });
+      toast(`saved ${r.saved} (declares ${r.compatibles.join(', ') || 'no compatible'})`, 6000); await loadPeripherals(S.pid); }
+    finally { fe.disabled = false; fe.textContent = '⬇ Download driver'; } }); return; }
   const ak = t.closest('[data-ask]');
   if (ak) { askAi(ak.dataset.ask); return; }
   const ex = t.closest('[data-examples]');
@@ -358,6 +368,16 @@ $('#btn-form').onclick = () => guard(async () => {
 });
 $('#btn-new').onclick = () => { location.href = '/#add'; };
 $('#btn-ask').onclick = () => { if (S.plan) askAi(null); };
+$('#btn-del').onclick = () => guard(async () => {
+  const id = S.pid; if (!id) return;
+  if (!confirm(`Delete "${id}"?\n\nIts form (peripherals/${id}.yaml) and ticked-off steps move to .state/trash/. Your kernel source and board are not touched.`)) return;
+  const r = await api('/api/peripheral?id=' + encodeURIComponent(id), { method: 'DELETE' });
+  try { localStorage.removeItem('bs.pid'); } catch { }
+  S.pid = null; S.open.clear(); history.replaceState(null, '', '/app');
+  await loadPeripherals();
+  if (!S.pid) { $('#ladder').innerHTML = ''; $('#plan-summary').innerHTML = ''; $('#steps').innerHTML = '<p class="muted" style="padding:10px">No devices yet. Press ＋ to add one.</p>'; }
+  toast(`Deleted ${id}: restore it from the home page's undo, or from .state/trash/${r.trashed}.yaml`, 7000);
+});
 $('#btn-settings').onclick = () => guard(async () => {
   const r = await api('/api/config');
   editText('workspace.yaml', r.text, '<p class="muted small">Point <code>kernel_src</code> at the kernel tree your board runs, set <code>board.transport: ssh</code> plus <code>host</code> once key login works.</p>',

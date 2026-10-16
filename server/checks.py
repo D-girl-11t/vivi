@@ -237,6 +237,8 @@ def c_driver_source(ck, ctx, ws):
         return R('pass', f"in the kernel tree: {ctx['driver']['file']}")
     if not port['src']:
         return R('fail', f'no driver for "{compat}" in your kernel tree. Set driver_src: in the form')
+    if port.get('src_url'):
+        return R('fail', 'driver_src is a web link: press ⬇ Download driver')
     if not port['src_ok']:
         return R('fail', f"driver_src {port['src']} not found")
     if not port['src_compat_ok']:

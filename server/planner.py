@@ -306,9 +306,11 @@ def driver_port_info(form: dict, driver: dict | None, compat: str, sub: dict, ws
     """Is the driver in the kernel tree? If not, where will it come from and where should it go?"""
     ktree = ws.ktree
     src = form.get('driver_src')
-    src_path = _resolve_path(src, ws.root, ktree.root if ktree else None) if src else None
+    src_url = src if src and re.match(r'https?://', str(src)) else None
+    src_path = _resolve_path(src, ws.root, ktree.root if ktree else None) if src and not src_url else None
     src_ok = bool(src_path and os.path.isfile(src_path))
     module = os.path.splitext(os.path.basename(src_path))[0] if src_path else \
+        (compat.split(',')[-1] if src_url and compat else None) or \
         (driver or {}).get('name') or (compat.split(',')[-1] if compat else 'mydriver')
     module = re.sub(r'[^A-Za-z0-9_]', '_', module)
     if driver and driver.get('file'):
@@ -330,7 +332,7 @@ def driver_port_info(form: dict, driver: dict | None, compat: str, sub: dict, ws
             src_text = f.read()
     return {
         'state': state, 'active': bool(src) or state in ('missing', 'not_built'),
-        'src': src, 'src_path': src_path, 'src_ok': src_ok,
+        'src': src, 'src_url': src_url, 'src_path': src_path, 'src_ok': src_ok,
         'src_compat_ok': (not compat) or (f'"{compat}"' in src_text),
         'module': module, 'config': cfg, 'symbol': cfg.removeprefix('CONFIG_'),
         'dir': ddir, 'dest': f'{ddir}/{module}.c', 'object': f'{ddir}/{module}.o',
@@ -374,15 +376,46 @@ def anchor_info(dts, anchor: str | None) -> dict:
     return {'exists': False, 'line': pf.text.count('\n') + 1, 'file': dts.rel(pf.path)}
 
 
+def form_problems(form: dict, kb: Knowledge, ws, ctx: dict) -> list[dict]:
+    """Contradictions between the form, the kernel tree and the driver code.
+
+    Each problem may carry `fix`: form fields that would resolve it, so the UI can offer a button.
+    """
+    out = []
+    bus, compat, req = form.get('bus'), form.get('compatible') or '', ctx.get('driver_req') or {}
+    if bus not in kb.bus:
+        out.append({'text': f"unknown bus '{bus}'. Known: {', '.join(kb.bus)}"})
+    if form.get('subsystem') and form['subsystem'] not in kb.subsystem:
+        out.append({'text': f"unknown subsystem '{form['subsystem']}'. Known: {', '.join(kb.subsystem)}"})
+    vendors = ws.ktree.vendor_prefixes() if ws.ktree and ws.ktree.ok else set()
+    if ',' in compat and vendors and compat.split(',')[0] not in vendors:
+        out.append({'text': f"vendor prefix '{compat.split(',')[0]}' is not registered in vendor-prefixes.yaml, "
+                            "so check the chip maker's prefix (e.g. ovti = OmniVision, sony, bosch, ti, st)"})
+    decl = req.get('compatibles') or []
+    if decl and compat and compat not in decl:
+        best = next((c for c in decl if c.split(',')[-1] == compat.split(',')[-1]), decl[0])
+        out.append({'text': f'the driver declares "{best}", but the form says "{compat}". They must match exactly, '
+                            'or the driver never binds', 'fix': {'compatible': best}})
+    want = None
+    if req.get('bus') == 'i2c' and req.get('video_sensor'):
+        want = 'csi2' if 'csi2' in kb.bus else None
+    elif req.get('bus') in ('i2c', 'spi') and req['bus'] in kb.bus and bus not in (req['bus'], 'csi2'):
+        want = req['bus']
+    if want and bus != want:
+        why = 'an I2C-controlled image sensor (V4L2 subdevice), so its video goes over MIPI CSI-2' if want == 'csi2' else f'an {want.upper()} driver'
+        out.append({'text': f"the driver code is {why}, but the form says bus: {bus}", 'fix': {'bus': want}})
+    port = ctx.get('port') or {}
+    if port.get('src_url'):
+        out.append({'text': 'driver_src is a web link: the tool needs the .c file on disk to read it', 'action': 'fetch_driver'})
+    return out
+
+
 def plan(form: dict, kb: Knowledge, ws, manual: dict, live_step: str | None = None) -> dict:
     from .checks import evaluate
     soc = kb.soc.get(ws.cfg.get('soc'), {})
     ctx = build_context(form, kb, soc, ws)
-    steps, problems = [], []
-    if form.get('bus') not in kb.bus:
-        problems.append(f"unknown bus '{form.get('bus')}'. Known: {', '.join(kb.bus)}")
-    if form.get('subsystem') and form.get('subsystem') not in kb.subsystem:
-        problems.append(f"unknown subsystem '{form.get('subsystem')}'. Known: {', '.join(kb.subsystem)}")
+    steps = []
+    problems = form_problems(form, kb, ws, ctx)
 
     for tpl in step_templates(form, kb):
         try:
@@ -403,6 +436,7 @@ def plan(form: dict, kb: Knowledge, ws, manual: dict, live_step: str | None = No
                 'command': command,
                 'examples': render(tpl.get('examples'), sctx) or None,
                 'check': render(tpl.get('check') or {'type': 'manual'}, sctx),
+                'actions': [a for a in str(render(tpl.get('actions') or '', sctx)).split() if a],
             }
             if st['examples'] and not any(st['examples'].values()):
                 st['examples'] = None

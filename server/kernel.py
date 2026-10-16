@@ -112,6 +112,17 @@ class KernelTree:
                 return f'{k}: {v[k]}'
         return ''
 
+    # ---------- vendor prefixes ----------
+    def vendor_prefixes(self) -> set[str]:
+        """Every registered compatible vendor prefix (bindings/vendor-prefixes.yaml)."""
+        if not hasattr(self, '_vendors'):
+            try:
+                text = _read(os.path.join(self.root, 'Documentation/devicetree/bindings/vendor-prefixes.yaml'))
+                self._vendors = set(re.findall(r'^\s+"\^([A-Za-z0-9-]+),\.\*":', text, re.M))
+            except OSError:
+                self._vendors = set()
+        return self._vendors
+
     # ---------- finding the right compatible string ----------
     def search_compatibles(self, q: str, limit: int = 12) -> list[dict]:
         """Part name (e.g. "imx219", "bme280") -> compatible strings this tree knows, with where they appear."""
@@ -253,6 +264,7 @@ def driver_requirements(text: str) -> dict:
                 req[kind].append(name)
             if '_optional' in m.group(0) and name not in req['optional']:
                 req['optional'].append(name)
+    req['clock_names'] = [c for c in req['clock'] if not c.startswith('(')]   # these need clock-names in the node
     # regulator_bulk_get with a static name table: static const char * const foo_supply_name[] = {"VANA", ...};
     for m in re.finditer(r'(?:supply_names?|supplies)\s*\[\s*\w*\s*\]\s*=\s*\{([^}]*)\}', text):
         for s in re.findall(r'"([^"]+)"', m.group(1)):
@@ -260,6 +272,8 @@ def driver_requirements(text: str) -> dict:
                 req['supply'].append(s)
     req['endpoint'] = bool(re.search(r'v4l2_fwnode_endpoint_(?:alloc_)?parse|of_graph_get_|fwnode_graph_get_next_endpoint', text))
     req['link_frequencies'] = 'link_frequencies' in text or 'link-frequencies' in text
+    # an image sensor: a V4L2 subdevice producing media-bus pixel formats (older drivers never parse their endpoint)
+    req['video_sensor'] = bool(req['endpoint'] or (re.search(r'struct v4l2_subdev\b', text) and 'MEDIA_BUS_FMT_' in text))
     # link-frequency values the driver accepts (s64 foo_link_freq_menu[] = { 408000000, MACRO })
     freqs = []
     for m in re.finditer(r'link_freq\w*\s*\[\s*\]\s*=\s*\{([^}]*)\}', text):
@@ -269,8 +283,11 @@ def driver_requirements(text: str) -> dict:
                 freqs.append(v)
     req['link_freq_values'] = freqs
     # input clock the driver insists on (if (rate != FOO_XCLK_FREQ) return -EINVAL)
-    m = re.search(r'(?:xclk|inclk|extclk|mclk)\w*\)?\s*!=\s*(\w+)', text, re.I)
+    m = re.search(r'clk_get_rate\s*\([^)]*\)\s*!=\s*(\w+)', text) or \
+        re.search(r'\b\w*clk\w*\)?\s*!=\s*(\w+)', text, re.I)
     req['clock_hz'] = num(m.group(1)) if m else None
+    if req['clock_hz'] is not None and req['clock_hz'] < 1000:   # compared against something that isn't a rate
+        req['clock_hz'] = None
     req['irq'] = bool(re.search(r'client->irq|platform_get_irq|of_irq_get|spi->irq', text))
     req['lanes'] = sorted(set(re.findall(r'num_data_lanes\s*!=\s*(\d)', text)))
     if re.search(r'module_i2c_driver|i2c_add_driver|struct i2c_driver', text):

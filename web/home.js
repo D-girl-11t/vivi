@@ -10,7 +10,11 @@ async function api(path, opts = {}) {
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
-function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); }
+function toast(msg, ms = 2600, action) {
+  const t = $('#toast'); t.textContent = msg;
+  if (action) { const b = document.createElement('button'); b.textContent = action.label; b.onclick = () => { t.classList.remove('show'); action.run(); }; t.append(' ', b); }
+  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms);
+}
 async function guard(fn) { try { return await fn(); } catch (e) { toast('⚠ ' + e.message, 6000); console.error(e); } }
 
 let O = null, KB = null;
@@ -75,13 +79,14 @@ function renderDevices() {
   const cards = O.items.map(d => {
     const pct = d.total ? Math.round(100 * d.done / d.total) : 0;
     return `<a class="dev-card" href="/app?p=${encodeURIComponent(d.id)}">
-      <div class="dc-head"><b>${esc(d.name)}</b>${d.unfilled?.includes('compatible') ? '<span class="pill">not filled in</span>' : ''}${d.needs_driver ? '<span class="pill warn" title="No driver for this device in your kernel tree: the guide includes the Driver layer">needs a driver</span>' : ''}</div>
+      <div class="dc-head"><b>${esc(d.name)}</b><span class="spacer"></span>${d.unfilled?.includes('compatible') ? '<span class="pill">not filled in</span>' : ''}${d.needs_driver ? '<span class="pill warn" title="No driver for this device in your kernel tree: the guide includes the Driver layer">needs a driver</span>' : ''}<button class="dc-del" data-del="${esc(d.id)}" title="Delete this device (moves its file to the trash, you can undo)">🗑</button></div>
       <div class="muted small">${esc(d.bus || '?')} → ${esc(d.subsystem || '?')}</div>
       ${d.error ? `<div class="err small">⚠ ${esc(d.error)}</div>` : d.unfilled?.includes('compatible') ? `
       <div class="callout warn small">Still the <b>blank template</b> (<code>compatible: vendor,chip</code>). Open it and fill in the form,
         or delete <code>peripherals/${esc(d.id)}.yaml</code> and use <b>＋ Add a device</b>.</div>` : `
       <div class="bar"><span style="width:${pct}%"></span></div>
       <div class="small">${d.done}/${d.total} steps done</div>
+      ${d.problems?.length ? `<div class="small card-problem" title="${esc(d.problems.join('\n'))}">⚠ ${esc(d.problems[0])}${d.problems.length > 1 ? ` (+${d.problems.length - 1} more)` : ''}</div>` : ''}
       ${d.next ? `<div class="small next">Next: <b>${esc(d.next.title)}</b> <span class="layer">${esc(d.next.layer)}</span></div>` : '<div class="small next">🎉 all green</div>'}`}
     </a>`;
   });
@@ -106,7 +111,17 @@ function renderAi() {
       ${!a.enabled ? 'Turn it on with <code>ai: {enabled: true}</code> in workspace.yaml.' : (!a.ready ? `<span class="err">${a.backend === 'claude-code' ? 'The claude CLI was not found on PATH.' : 'ANTHROPIC_API_KEY is not set.'}</span>` : '')}</p>`;
 }
 
+async function deleteDevice(id) {
+  if (!confirm(`Delete "${id}"?\n\nIts form (peripherals/${id}.yaml) and ticked-off steps move to .state/trash/. Your kernel source and board are not touched.`)) return;
+  const r = await api('/api/peripheral?id=' + encodeURIComponent(id), { method: 'DELETE' });
+  try { if (localStorage.getItem('bs.pid') === id) localStorage.removeItem('bs.pid'); } catch { }
+  await load();
+  toast(`Deleted ${id}`, 8000, { label: 'Undo', run: () => guard(async () => { await api('/api/peripheral/restore', { method: 'POST', body: { name: r.trashed } }); await load(); toast('restored ' + id); }) });
+}
+
 document.addEventListener('click', e => {
+  const del = e.target.closest('[data-del]');
+  if (del) { e.preventDefault(); e.stopPropagation(); guard(() => deleteDevice(del.dataset.del)); return; }
   const t = e.target.closest('[data-act]'); if (!t) return;
   e.preventDefault();
   if (t.dataset.act === 'setup') openSetup();
@@ -267,10 +282,13 @@ function stepDriver() {
       <p>That's normal for newer or less common parts (many camera modules, for example). The guide adds a <b>Driver</b> layer that walks you through it:
       find a driver (vendor BSP, the module maker's kernel fork, a sibling driver), add it to the build, and compile it against your kernel.
       It also <b>reads the driver's C code</b> to tell you which supplies, clocks, GPIOs and lanes your device-tree node needs.</p>
-      <label><span>Already have the driver's <code>.c</code> file? Path to it (optional, you can add it later)</span>
+      <label><span>Found a driver? Paste the path to its <code>.c</code> file, <b>or a web link</b> (a GitHub branch or file page works; the guide downloads it). Optional, you can add it later.</span>
       <input id="wz-src" value="${esc(W.driver_src)}" placeholder="drivers-extra/${esc(c.compatible.split(',').pop())}.c" autocomplete="off"></label>
       <span class="hint">Relative to this workspace or the kernel tree, or an absolute path.</span></div>`;
-  else box = `<div class="callout warn">Kernel source isn't set up, so the driver can't be looked up yet. You can continue; the guide will check later.</div>`;
+  if (c.vendor_known === false) box = `<div class="callout warn"><b>⚠ “${esc(c.compatible.split(',')[0])}” is not a registered vendor prefix.</b>
+      Compatible strings start with the <b>chip maker's</b> prefix (OmniVision = <code>ovti</code>, Sony = <code>sony</code>, Bosch = <code>bosch</code>).
+      Go back and fix it, or the driver will never match.</div>` + (box || '');
+  if (!box) box = `<div class="callout warn">Kernel source isn't set up, so the driver can't be looked up yet. You can continue; the guide will check later.</div>`;
   return `<h2>Is there a driver?</h2>${box}`;
 }
 

@@ -70,34 +70,8 @@ class Workspace:
         self.load()
 
     def set_cfg_fields(self, fields: dict):
-        """Change a few settings from the setup form while keeping the file's comments.
-
-        Keys are top-level names or `board.<name>`; values are plain strings.
-        """
-        import re
-        text = open(self.cfg_path).read()
-        for key, val in fields.items():
-            if val is None:
-                continue
-            val = str(val).strip()
-            q = val if re.fullmatch(r'[\w./@:~+-]*', val) else '"' + val.replace('"', '\\"') + '"'
-            if key.startswith('board.'):
-                sub = key.split('.', 1)[1]
-                m = re.search(r'^board:[^\n]*\n((?:[ \t]+[^\n]*\n?)*)', text, re.M)
-                if not m:
-                    text = text.rstrip('\n') + f'\n\nboard:\n  {sub}: {q}\n'
-                    continue
-                block = m.group(1)
-                if re.search(rf'^[ \t]+{sub}:', block, re.M):
-                    block = re.sub(rf'^([ \t]+{sub}:)[ \t]*[^#\n]*?([ \t]+#[^\n]*)?$', lambda x: f'{x.group(1)} {q}' + (x.group(2) or ''), block, count=1, flags=re.M)
-                else:
-                    block = block.rstrip('\n') + f'\n  {sub}: {q}\n'
-                text = text[:m.start(1)] + block + text[m.end(1):]
-            elif re.search(rf'^{key}:', text, re.M):
-                text = re.sub(rf'^({key}:)[ \t]*[^#\n]*?([ \t]+#[^\n]*)?$', lambda x: f'{x.group(1)} {q}' + (x.group(2) or ''), text, count=1, flags=re.M)
-            else:
-                text = text.rstrip('\n') + f'\n{key}: {q}\n'
-        self.save_cfg_text(text)
+        """Change a few settings from the setup form while keeping the file's comments."""
+        self.save_cfg_text(set_yaml_fields(open(self.cfg_path).read(), fields))
 
     # ---------- board ----------
     @property
@@ -173,6 +147,46 @@ class Workspace:
         with open(self.periph_path(pid), 'w') as f:
             f.write(text)
 
+    @property
+    def trash_dir(self):
+        return os.path.join(self.state_dir, 'trash')
+
+    def delete_periph(self, pid: str) -> str:
+        """Move the form to .state/trash/ (with its ticked-off steps) so it can be restored."""
+        import time
+        src = self.periph_path(pid)
+        if not os.path.isfile(src):
+            raise FileNotFoundError(pid)
+        os.makedirs(self.trash_dir, exist_ok=True)
+        name = f"{safe_name(pid)}--{time.strftime('%Y%m%d-%H%M%S')}"
+        os.replace(src, os.path.join(self.trash_dir, name + '.yaml'))
+        with self.lock:
+            p = self.progress()
+            ticks = p.pop(pid, None)
+            if ticks:
+                json.dump(ticks, open(os.path.join(self.trash_dir, name + '.progress.json'), 'w'))
+                json.dump(p, open(self.progress_path, 'w'), indent=1)
+        return name
+
+    def restore_periph(self, name: str) -> str:
+        name = safe_name(name)
+        src = os.path.join(self.trash_dir, name + '.yaml')
+        pid = name.rsplit('--', 1)[0]
+        if not os.path.isfile(src):
+            raise FileNotFoundError(name)
+        if os.path.exists(self.periph_path(pid)):
+            raise FileExistsError(f'a device called {pid} already exists')
+        os.makedirs(self.periph_dir, exist_ok=True)
+        os.replace(src, self.periph_path(pid))
+        prog = os.path.join(self.trash_dir, name + '.progress.json')
+        if os.path.isfile(prog):
+            with self.lock:
+                p = self.progress()
+                p[pid] = json.load(open(prog))
+                json.dump(p, open(self.progress_path, 'w'), indent=1)
+            os.unlink(prog)
+        return pid
+
     # ---------- progress (manual ticks) ----------
     @property
     def progress_path(self):
@@ -203,6 +217,37 @@ class Workspace:
             if any(p == os.path.realpath(x) or p.startswith(os.path.realpath(x) + os.sep) for x in roots) and os.path.isfile(p):
                 return p
         raise FileNotFoundError(rel)
+
+
+def set_yaml_fields(text: str, fields: dict) -> str:
+    """Set top-level keys, or one level down with "parent.key", in YAML text, keeping comments.
+
+    Values are written as plain scalars (quoted when needed); None means "leave it".
+    """
+    import re
+    for key, val in fields.items():
+        if val is None:
+            continue
+        val = str(val).strip()
+        q = val if re.fullmatch(r'[\w./@:~+,-]*', val) and not re.fullmatch(r'(yes|no|on|off|true|false|null|~|[\d.]+)', val, re.I) \
+            else '"' + val.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        if '.' in key:
+            parent, sub = key.split('.', 1)
+            m = re.search(rf'^{parent}:[^\n]*\n((?:[ \t]+[^\n]*\n?)*)', text, re.M)
+            if not m:
+                text = text.rstrip('\n') + f'\n\n{parent}:\n  {sub}: {q}\n'
+                continue
+            block = m.group(1)
+            if re.search(rf'^[ \t]+{sub}:', block, re.M):
+                block = re.sub(rf'^([ \t]+{sub}:)[ \t]*[^#\n]*?([ \t]+#[^\n]*)?$', lambda x: f'{x.group(1)} {q}' + (x.group(2) or ''), block, count=1, flags=re.M)
+            else:
+                block = block.rstrip('\n') + f'\n  {sub}: {q}\n'
+            text = text[:m.start(1)] + block + text[m.end(1):]
+        elif re.search(rf'^{key}:', text, re.M):
+            text = re.sub(rf'^({key}:)[ \t]*[^#\n]*?([ \t]+#[^\n]*)?$', lambda x: f'{x.group(1)} {q}' + (x.group(2) or ''), text, count=1, flags=re.M)
+        else:
+            text = text.rstrip('\n') + f'\n{key}: {q}\n'
+    return text
 
 
 def safe_name(s: str) -> str:

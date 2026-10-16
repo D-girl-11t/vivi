@@ -183,7 +183,12 @@ driver_port:
       ```
       driver_src: drivers-extra/{{ port.module }}.c
       ```
-      {%- if port.src and not port.src_ok %}
+      {%- if port.src_url %}
+
+      `driver_src` is a **web link**. Press **⬇ Download driver** below: the tool works out the raw-file URL
+      (for a GitHub branch it tries `{{ port.dir }}/{{ port.module }}.c`), saves it under `drivers-extra/`, and
+      points the form at the local copy. The link is kept as `driver_url`.
+      {%- elif port.src and not port.src_ok %}
 
       ⚠ `{{ port.src }}` was not found (looked in the workspace and the kernel tree).
       {%- elif port.src_ok and not port.src_compat_ok %}
@@ -199,6 +204,7 @@ driver_port:
       {%- if driver_req.endpoint %}, a graph endpoint{% if driver_req.lanes %} ({{ driver_req.lanes|join(' or ') }} data lanes){% endif %}{% endif %}.
       {%- endif %}
     command: "grep -rn '\"{{ dev.compatible }}\"' drivers/ sound/"
+    actions: "{{ 'fetch_driver' if port.src_url else '' }}"     # UI shows a Download button
     check: {type: driver_source}
 
   - id: driver_integrate
