@@ -125,3 +125,37 @@ class ScanTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ValidateTests(unittest.TestCase):
+    def setUp(self):
+        from server.validate import validate_source
+        self.v = validate_source
+        self.k = tempfile.mkdtemp()
+        for d in ('arch/arm64/boot/dts/acme', 'drivers', 'include'):
+            os.makedirs(os.path.join(self.k, d))
+        open(os.path.join(self.k, 'Makefile'), 'w').write('VERSION = 6\nPATCHLEVEL = 18\nSUBLEVEL = 2\nEXTRAVERSION =\nNAME = x\n')
+        dd = os.path.join(self.k, 'arch/arm64/boot/dts/acme')
+        open(os.path.join(dd, 'soc.dtsi'), 'w').write(SOC_DTSI)
+        open(os.path.join(dd, 'board.dts'), 'w').write(BOARD.replace('/dts-v1/;', '/dts-v1/;\n/ { compatible = "acme,board", "acme,soc"; };'))
+        open(os.path.join(dd, 'broken.dts'), 'w').write('/dts-v1/;\n#include "nothere.dtsi"\n')
+        self.soc = {'dts_dir': 'arch/arm64/boot/dts/acme'}
+        self.snap = {'meta': {}, 'system': {'uname': 'Linux b 6.18.2 #1', 'compatible': 'acme,board acme,soc', 'model': 'Acme board'}}
+
+    def levels(self, k, b, snap=None):
+        r = self.v(k, b, self.soc, snap or self.snap)
+        return r['ok'], [(c['level'], c['text'][:40]) for c in r['checks']]
+
+    def test_wrong_inputs_are_errors(self):
+        for k in ('', '6.18.2-1.0.0', 'relative/path', '/no/such/dir'):
+            ok, ch = self.levels(k, 'x.dts')
+            self.assertFalse(ok, k); self.assertEqual(ch[-1][0], 'error')
+        self.assertFalse(self.levels(self.k, 'arch/arm64/boot/dts/acme/missing.dts')[0])
+        ok, ch = self.levels(self.k, 'arch/arm64/boot/dts/acme/broken.dts')
+        self.assertFalse(ok); self.assertTrue(any('not in this tree' in t for _, t in ch) or any(l == 'error' for l, _ in ch))
+
+    def test_good_and_mismatched_board(self):
+        ok, ch = self.levels(self.k, 'arch/arm64/boot/dts/acme/board.dts')
+        self.assertTrue(ok, ch)
+        other = dict(self.snap, system=dict(self.snap['system'], compatible='other,board other,soc'))
+        self.assertFalse(self.levels(self.k, 'arch/arm64/boot/dts/acme/board.dts', other)[0])

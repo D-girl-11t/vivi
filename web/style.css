@@ -240,3 +240,10 @@ ol.reach { padding-left: 20px; margin: 6px 0; } ol.reach li { margin: 10px 0; } 
 .sec-divider { border: none; border-top: 1px solid var(--line); margin: 40px 0 0; }
 .get-src { margin-top: 8px; font-size: 12.5px; }
 .get-src .cmd pre { font-size: 11.5px; }
+.src-check { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); margin: 4px 0 8px; }
+.chk { display: flex; gap: 8px; font-size: 12.5px; padding: 3px 0; align-items: flex-start; }
+.chk .ci { width: 14px; flex: none; font-weight: 700; }
+.chk.ok .ci { color: var(--pass); } .chk.warn .ci { color: var(--unknown); } .chk.error .ci { color: var(--fail); }
+.chk.error { color: #8f1d24; } .chk.warn { color: #6b4a00; }
+.cfix { color: var(--muted); font-size: 12px; word-break: break-word; }
+.setup-card .chk { font-size: 12px; }

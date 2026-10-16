@@ -67,6 +67,7 @@
         Otherwise clone your vendor's tree at the tag matching <code>uname -r</code> on the board.</span></label>
     <label>Board device-tree file (inside that tree) <input name="board_dts" placeholder="arch/arm64/boot/dts/vendor/board.dts" autocomplete="off">
       <span class="hint">On the board, <code>cat /proc/device-tree/model</code> tells you which board; in U-Boot, <code>printenv fdtfile</code> tells you which .dtb.</span></label>
+    <div id="src-check" class="src-check"></div>
     <label>How to reach the board <select name="board.transport">
         <option value="ssh">ssh: over the network (recommended)</option>
         <option value="local">local: this tool runs on the board itself</option>

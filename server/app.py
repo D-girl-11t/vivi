@@ -18,6 +18,7 @@ from . import ai
 from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
 from .fetch import fetch_driver
+from .validate import validate_source
 from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name, set_yaml_fields
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -68,38 +69,32 @@ def _release(uname: str | None) -> str | None:
 
 
 def source_info() -> dict:
-    """Kernel source state, plus warnings a beginner would not think to check."""
+    """Kernel source state for the homepage, with plain-words checks (server/validate.py)."""
     kt, cfg = WS.ktree, WS.cfg
+    snap = WS.snapshot()
+    soc = KB.soc.get(cfg.get('soc'), {})
+    v = validate_source(cfg.get('kernel_src'), cfg.get('board_dts'), soc, snap)
     out = {'kernel': kt.root if kt else None, 'configured': cfg.get('kernel_src'),
            'board_dts': WS.dts.rel(WS.dts.board_dts) if WS.dts else cfg.get('board_dts'),
-           'ok': bool(WS.dts and WS.dts.ok), 'tree_ok': bool(kt and kt.ok), 'warnings': []}
-    ks = str(cfg.get('kernel_src') or '')
-    if ks and not kt:
-        if re.fullmatch(r'v?\d+\.\d+[\w.+-]*', ks):
-            out['warnings'].append(f'"{ks}" is a kernel version, not a folder. Kernel source = the folder with the code; get it with the command below')
-        else:
-            out['warnings'].append(f"kernel_src folder not found: {ks}")
+           'ok': bool(WS.dts and WS.dts.ok) and v['ok'], 'tree_ok': bool(kt and kt.ok), 'checks': v['checks'],
+           'warnings': [c['text'] + (' ' + c['fix'] if c.get('fix') else '') for c in v['checks'] if c['level'] != 'ok']}
+    out.update(v['info'])
     # how to get the exact source the board runs, from the SoC profile + the board's uname -r
-    snap = WS.snapshot()
     rel = _release(snap['system'].get('uname')) if snap and not snap['meta'].get('demo') else None
-    soc = KB.soc.get(cfg.get('soc'), {})
     if rel and soc.get('kernel_repo'):
         m = re.match(r'(.+?)-g([0-9a-f]{7,40})$', rel)
         ver, commit = (m.group(1), m.group(2)) if m else (rel, None)
         tag = soc.get('kernel_tag', '{version}').format(version=ver)
         out['get_source'] = {'release': rel, 'commit': commit, 'tag': tag, 'repo': soc['kernel_repo'],
                              'cmd': f"git clone --depth 1 -b {tag} {soc['kernel_repo']} ~/{soc['kernel_repo'].rstrip('/').split('/')[-1]}-{ver}"}
-        if out.get('version') and kt and kt.ok and not rel.startswith(out['version'].split('-')[0]):
-            out['warnings'].append(f"the board runs {rel}, but this tree is {out['version']}")
-    if kt:
-        out.update(kt.info())
-        if not kt.ok:
-            out['warnings'].append('this folder has no drivers/ directory: is it really a kernel tree?')
-        if kt.root.startswith(('/tmp/', '/var/tmp/')):
-            out['warnings'].append('temporary copy under /tmp: it will disappear. Point it at your own kernel tree')
-        if kt.ok and not (WS.dts and WS.dts.ok):
-            out['warnings'].append(f"board file not found in that tree: {cfg.get('board_dts')}")
     return out
+
+
+@route('POST', '/api/source/validate')
+def source_validate(q, body):
+    """Check kernel_src + board_dts from the setup form before saving them."""
+    soc = KB.soc.get(body.get('soc') or WS.cfg.get('soc'), {})
+    return validate_source(body.get('kernel_src'), body.get('board_dts'), soc, WS.snapshot())
 
 
 @route('GET', '/api/config')

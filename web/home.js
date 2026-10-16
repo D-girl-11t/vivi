@@ -60,7 +60,7 @@ function renderSetup() {
       + kv('Board file', `<code>${esc((src.board_dts || '').split('/').pop())}</code>`, src.board_dts)
       + kv('Folder', esc(src.kernel), src.kernel)
       : `<p class="muted">The kernel tree that built your board's kernel: your Yocto <code>kernel-source</code>, or your vendor's kernel at the matching tag.</p>`)
-    + warns(src.warnings)
+    + checksHtml((src.checks || []).filter(c => c.level !== 'ok'))
     + (src.get_source && !(src.tree_ok && !src.warnings.length) ? `<div class="get-src"><b>Get the exact source your board runs</b>
         <span class="muted small">(board kernel <code>${esc(src.get_source.release)}</code>${src.get_source.commit ? `, commit <code>${esc(src.get_source.commit)}</code>` : ''})</span>
         ${cmd(src.get_source.cmd)}<span class="muted small">On your laptop (≈ 300 MB). Then set Kernel source to that folder.</span></div>` : ''),
@@ -76,6 +76,12 @@ function renderSetup() {
     `<div class="row-btns"><button data-act="setup" class="${live ? '' : 'primary'}">${c.board.transport === 'ssh' ? 'Change' : 'Connect'}</button>${b.live ? '<button data-act="scan">⟳ Scan now</button>' : ''}</div>`);
   h += '</div>';
   $('#setup-cards').innerHTML = h;
+}
+
+// a list of source checks: ✓ / ⚠ / ✗ with the fix under each
+function checksHtml(list) {
+  const icon = { ok: '✓', warn: '⚠', error: '✗' };
+  return list.map(c => `<div class="chk ${c.level}"><span class="ci">${icon[c.level]}</span><div>${esc(c.text)}${c.fix ? `<div class="cfix">${esc(c.fix)}</div>` : ''}</div></div>`).join('');
 }
 
 function renderDevices() {
@@ -139,6 +145,8 @@ function openSetup() {
   f.soc.value = c.soc || '';
   f.kernel_src.value = c.kernel_src || ''; f.board_dts.value = c.board_dts || '';
   f['board.transport'].value = c.board.transport || 'snapshot'; f['board.host'].value = c.board.host || '';
+  let vt; const revalidate = () => { clearTimeout(vt); vt = setTimeout(validateSrc, 400); };
+  f.kernel_src.oninput = revalidate; f.board_dts.oninput = revalidate; f.soc.onchange = revalidate; validateSrc();
   const sync = () => { $('.ssh-only').classList.toggle('hidden', f['board.transport'].value !== 'ssh'); renderReach(); $('#test-out').innerHTML = ''; };
   f['board.transport'].onchange = sync; f['board.host'].oninput = renderReach; sync();
   $('#reach-help').open = !(O.status.board.scanned && !O.status.board.scanned.demo);
@@ -211,10 +219,22 @@ $('#btn-test').onclick = () => guard(async () => {
   } finally { b.disabled = false; }
 });
 
+let lastCheck = null;
+async function validateSrc() {
+  const f = $('#setup-form'), box = $('#src-check');
+  box.innerHTML = '<span class="muted small">checking the kernel source…</span>';
+  try {
+    lastCheck = await api('/api/source/validate', { method: 'POST', body: { kernel_src: f.kernel_src.value, board_dts: f.board_dts.value, soc: f.soc.value } });
+    box.innerHTML = `<div class="small"><b>${lastCheck.ok ? '✓ Kernel source looks good' : '✗ Kernel source needs fixing'}</b></div>` + checksHtml(lastCheck.checks);
+  } catch (e) { box.innerHTML = `<div class="chk error"><span class="ci">✗</span><div>Could not check: ${esc(e.message)}</div></div>`; lastCheck = null; }
+}
+
 $('#setup-save').onclick = e => {
   e.preventDefault();
   const f = $('#setup-form');
   guard(async () => {
+    await validateSrc();
+    if (lastCheck && !lastCheck.ok && !confirm('The kernel source settings have errors (shown in red). The guide will not be able to read your files until they are fixed.\n\nSave anyway?')) return;
     const body = {}; ['soc', 'kernel_src', 'board_dts', 'board.transport', 'board.host'].forEach(k => { body[k] = f[k].value.trim(); });
     await api('/api/config/fields', { method: 'POST', body });
     $('#dlg-setup').close(); toast('saved'); await load();
