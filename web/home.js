@@ -60,7 +60,10 @@ function renderSetup() {
       + kv('Board file', `<code>${esc((src.board_dts || '').split('/').pop())}</code>`, src.board_dts)
       + kv('Folder', esc(src.kernel), src.kernel)
       : `<p class="muted">The kernel tree that built your board's kernel: your Yocto <code>kernel-source</code>, or your vendor's kernel at the matching tag.</p>`)
-    + warns(src.warnings),
+    + warns(src.warnings)
+    + (src.get_source && !(src.tree_ok && !src.warnings.length) ? `<div class="get-src"><b>Get the exact source your board runs</b>
+        <span class="muted small">(board kernel <code>${esc(src.get_source.release)}</code>${src.get_source.commit ? `, commit <code>${esc(src.get_source.commit)}</code>` : ''})</span>
+        ${cmd(src.get_source.cmd)}<span class="muted small">On your laptop (≈ 300 MB). Then set Kernel source to that folder.</span></div>` : ''),
     'Used for: editing guidance, pin names, finding drivers.',
     `<button data-act="setup" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${src.configured ? 'Change' : 'Set up'}</button>`);
 

@@ -7,7 +7,7 @@ import threading
 
 import yaml
 
-from .board import load_snapshot, make_transport, scan
+from .board import analyze, load_snapshot, make_transport, scan
 from .dts import DtsIndex
 from .kernel import KernelTree
 
@@ -85,6 +85,10 @@ class Workspace:
                     self._snap = load_snapshot(self.transport.path)
                 else:
                     self._snap = load_snapshot(self.last_scan_path)
+                if self._snap and self._snap.get('devices') is not None:
+                    # re-classify with what the kernel tree knows (also upgrades older saved scans)
+                    early = self.ktree.early_init_compatibles() if self.ktree and self.ktree.ok else None
+                    self._snap['findings'] = analyze(self._snap, early)
             return self._snap
 
     def rescan(self) -> dict:
@@ -95,6 +99,8 @@ class Workspace:
                 raise RuntimeError('snapshot mode: snapshot file not found. Set board.transport to ssh in workspace.yaml')
             return snap
         snap = scan(self.transport)
+        early = self.ktree.early_init_compatibles() if self.ktree and self.ktree.ok else None
+        snap['findings'] = analyze(snap, early)
         with self.lock:
             with open(self.last_scan_path, 'w') as f:
                 json.dump(snap, f)

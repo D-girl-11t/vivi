@@ -112,6 +112,19 @@ class KernelTree:
                 return f'{k}: {v[k]}'
         return ''
 
+    # ---------- early-init compatibles ----------
+    def early_init_compatibles(self) -> set[str]:
+        """Compatibles handled by TIMER_/CLK_/IRQCHIP_OF_DECLARE: initialised early, never "bound"."""
+        if not getattr(self, '_early', None):
+            dirs = [d for d in ('drivers', 'arch') if os.path.isdir(os.path.join(self.root, d))]
+            try:   # a cold disk cache on a full tree can take a while; don't cache a failed attempt
+                res = subprocess.run(['grep', '-rhoE', '--include=*.c', r'_OF_DECLARE(_DRIVER)?\([^,]+,\s*"[^"]+"', *dirs],
+                                     cwd=self.root, capture_output=True, text=True, timeout=300)
+                self._early = set(re.findall(r'"([^"]+)"', res.stdout))
+            except (OSError, subprocess.TimeoutExpired):
+                return set()
+        return self._early
+
     # ---------- vendor prefixes ----------
     def vendor_prefixes(self) -> set[str]:
         """Every registered compatible vendor prefix (bindings/vendor-prefixes.yaml)."""

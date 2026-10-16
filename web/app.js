@@ -131,7 +131,12 @@ function onBoardClick(e) {
       (devs.length ? devs.map(d => `device ${d.bus}/${d.name} → driver: ${d.driver || '(NONE, not bound)'}`).join('\n') : 'no Linux device created for this node'));
   }
   const show = t.dataset.show, f = b.findings;
-  if (show === 'unbound') return showRaw('Enabled but no driver bound', f.unbound.map(u => `${u.path}\n   compatible: ${u.compatible.join(', ')}\n   devices: ${u.devices.join(', ')}`).join('\n\n') || 'none 🎉', 'These nodes are status=okay and Linux created a device, but no driver claimed it.\nUsual causes: driver not built (kconfig), module not loaded, or probe failed (see dmesg).');
+  if (show === 'unbound') return showRaw('Enabled but no driver bound',
+    (f.unbound.map(u => `${u.path}\n   compatible: ${u.compatible.join(', ')}\n   devices: ${u.devices.join(', ')}` +
+      (u.dmesg?.length ? '\n   dmesg:\n' + u.dmesg.map(l => '     ' + l).join('\n') : '\n   dmesg: (nothing mentions it: driver probably not built or not loaded; check Kernel config)')).join('\n\n') || 'none 🎉') +
+    ((f.expected_unbound || []).length ? `\n\n──── ${f.expected_unbound.length} more with no driver BY DESIGN (not a problem) ────\n` +
+      f.expected_unbound.map(u => `${u.path}\n   ${u.why}`).join('\n') : ''),
+    'These nodes are status=okay and Linux created a device, but no driver claimed it.\nUsual causes: driver not built (kconfig), module failed to load (version mismatch), or probe failed (dmesg shows why).');
   if (show === 'deferred') return showRaw('Deferred probes', f.deferred.join('\n') || 'none (or debugfs not mounted)', 'A deferred probe means the driver is waiting for a resource (clock, regulator, GPIO, codec…) that never appeared.');
   if (show === 'enabled' || show === 'bound') { $('#dt-filter').value = 'okay'; renderDtList('okay'); }
 }

@@ -7,6 +7,11 @@ dts_dir: arch/arm64/boot/dts/freescale
 sibling_prefix: imx93          # "learn from other boards" searches imx93*.dts*
 status: complete
 
+# Where this SoC vendor publishes its kernel, and how a running kernel version maps to a git tag.
+# Board `uname -r` 6.18.2-1.0.0-gf49f45233f7b  ->  tag lf-6.18.2-1.0.0
+kernel_repo: https://github.com/nxp-imx/linux-imx
+kernel_tag: 'lf-{version}'          # {version} = uname -r without the "-g<commit>" suffix
+
 # ---------------------------------------------------------------- pins
 # Pads are named like GPIO_IO08. The pinfunc header lists every legal
 # (pad, function) pair, so we never have to guess a mux macro.

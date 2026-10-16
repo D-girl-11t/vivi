@@ -41,7 +41,7 @@ done
 S deferred; cat /sys/kernel/debug/devices_deferred 2>/dev/null
 S kconfig; (zcat /proc/config.gz 2>/dev/null || cat /boot/config-$(uname -r) 2>/dev/null) | grep -E '^CONFIG_[A-Za-z0-9_]+=[ym]'
 S modules; cut -d' ' -f1 /proc/modules 2>/dev/null
-S dmesg; dmesg 2>/dev/null | grep -iE 'error|fail|defer|unable|invalid|not found|timeout|missing|-EPROBE|probe' | tail -n 300
+S dmesg; dmesg 2>/dev/null | grep -iE 'error|fail|defer|unable|invalid|not found|timeout|missing|-EPROBE|probe|unknown symbol|disagrees about version|module format' | tail -n 300
 S alsa_cards; cat /proc/asound/cards 2>/dev/null
 S alsa_pcm; cat /proc/asound/pcm 2>/dev/null
 S v4l2; for d in /sys/class/video4linux/*; do [ -e "$d" ] && printf '%s\t%s\n' "${d##*/}" "$(cat "$d/name" 2>/dev/null)"; done
@@ -89,10 +89,11 @@ class LocalTransport(Transport):
 class SSHTransport(Transport):
     def __init__(self, host: str, opts: list[str] | None, control_dir: str):
         self.host = host
-        # the control socket path must fit in 108 bytes (Unix socket limit); deep workspaces need a short dir
-        if len(control_dir) + len('/cm-') + 40 >= 100:
-            import tempfile
-            control_dir = os.path.join(tempfile.gettempdir(), f'bs-ssh-{os.getuid()}')
+        # The control socket path must fit in 108 bytes (Unix socket limit), and while creating it ssh
+        # appends a 17-char temp suffix to "cm-<40 hex>". Workspace paths are rarely short enough, so
+        # always use a short private dir.
+        import tempfile
+        control_dir = os.path.join(tempfile.gettempdir(), f'bs-ssh-{os.getuid()}')
         os.makedirs(control_dir, mode=0o700, exist_ok=True)
         self.base = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
                      '-o', 'ControlMaster=auto', '-o', f'ControlPath={control_dir}/cm-%C',
@@ -180,13 +181,31 @@ def parse_scan(raw: str) -> dict:
     return snap
 
 
-def analyze(snap: dict) -> dict:
-    """The classic bring-up failure: a node is enabled but nothing bound to it."""
+# Enabled nodes that never get a driver, by design. Listing them as "not bound" would bury real problems.
+_NO_DRIVER_BY_DESIGN = [
+    (lambda n, devs: any(d['bus'] == 'cpu' for d in devs), 'CPU core: run by the kernel core, never bound to a driver'),
+    (lambda n, devs: 'simple-bus' in n['compatible'], 'bus container: only groups child nodes, has no driver of its own'),
+    (lambda n, devs: 'syscon' in n['compatible'], 'syscon: a shared register block other drivers use via regmap'),
+]
+
+
+# used when there is no kernel tree to read *_OF_DECLARE from: the ones on nearly every arm64 board
+_EARLY_FALLBACK = {'arm,armv8-timer', 'arm,armv7-timer', 'nxp,sysctr-timer', 'arm,gic-v3', 'arm,cortex-a15-gic',
+                   'arm,gic-400', 'fsl,imx93-anatop', 'fsl,imx8mp-anatop'}
+
+
+def analyze(snap: dict, early_init: set | None = None) -> dict:
+    """The classic bring-up failure: a node is enabled but nothing bound to it.
+
+    early_init: compatibles the kernel sets up with *_OF_DECLARE (timers, irqchips, early
+    clocks), which never show a bound driver. Comes from the kernel tree when we have one.
+    """
     by_of: dict[str, list[dict]] = {}
     for d in snap['devices']:
         if d['of_node']:
             by_of.setdefault(d['of_node'], []).append(d)
-    unbound, no_device, bound = [], [], 0
+    dmesg = snap['sections'].get('dmesg', '').split('\n')
+    unbound, expected, no_device, bound = [], [], [], 0
     for n in snap['dt']:
         if n['status'] not in ('okay', 'ok'):
             continue
@@ -194,12 +213,27 @@ def analyze(snap: dict) -> dict:
         if not devs:
             no_device.append(n['path'])
         elif not any(d['driver'] for d in devs):
-            unbound.append({'path': n['path'], 'compatible': n['compatible'],
-                            'devices': [d['bus'] + '/' + d['name'] for d in devs]})
+            entry = {'path': n['path'], 'compatible': n['compatible'],
+                     'devices': [d['bus'] + '/' + d['name'] for d in devs]}
+            why = next((msg for test, msg in _NO_DRIVER_BY_DESIGN if test(n, devs)), None)
+            if not why and any(c in (early_init or _EARLY_FALLBACK) for c in n['compatible']):
+                why = 'set up early by the kernel (an *_OF_DECLARE timer, clock or irqchip), not by a normal driver'
+            if why:
+                expected.append(dict(entry, why=why))
+                continue
+            # dmesg lines about this device: by its device name (2-0034) or the chip part (imx519)
+            names = {d['name'] for d in devs}
+            parts = {c.split(',')[-1] for c in n['compatible'] if len(c.split(',')[-1]) > 3}
+            # its own messages first ("adp5585 2-0034: ...", "imx519: ..."), then others that mention it
+            own = [l.strip() for l in dmesg if any(re.search(rf'\b{re.escape(k)}\b:', l) for k in names | parts)]
+            other = [l.strip() for l in dmesg if l.strip() not in own and any(k in l for k in names | parts)]
+            entry['dmesg'] = own[-3:] + other[-1:]
+            unbound.append(entry)
         else:
             bound += 1
     deferred = [l for l in snap['sections'].get('deferred', '').split('\n') if l.strip()]
-    return {'bound': bound, 'unbound': unbound, 'no_device': no_device, 'deferred': deferred,
+    return {'bound': bound, 'unbound': unbound, 'expected_unbound': expected, 'no_device': no_device,
+            'deferred': deferred,
             'enabled': sum(1 for n in snap['dt'] if n['status'] in ('okay', 'ok')),
             'disabled': sum(1 for n in snap['dt'] if n['status'] not in ('okay', 'ok'))}
 
