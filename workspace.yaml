@@ -16,8 +16,11 @@ editor: "code -g {path}:{line}"
 
 peripherals_dir: peripherals
 
-# Optional AI helper ("✦ Ask AI" on each step). Off by default; the guide itself never needs it.
-# The API key is read from the ANTHROPIC_API_KEY environment variable, never from this file.
+# AI helper ("✦ Ask Claude" on each step, "✦ Ask" for the whole device). The guide never needs it.
+#   backend: claude-code  uses your Claude Code login (the `claude` CLI); no API key needed
+#   backend: api          uses ANTHROPIC_API_KEY from the environment (never stored in this file)
+# model: empty = Claude Code's default; or an alias like sonnet / opus / fable
 ai:
-  enabled: false
-  model: claude-sonnet-5-5
+  enabled: true
+  backend: claude-code
+  model: ''

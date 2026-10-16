@@ -95,14 +95,15 @@ function renderLadder() {
 
 function renderAi() {
   const a = O.ai;
-  $('#ai-card').innerHTML = `<h3>Optional AI helper ${a.enabled ? (a.has_key ? '<span class="pill ok">on</span>' : '<span class="pill warn">key missing</span>') : '<span class="pill">off</span>'}</h3>
-    <p>For what rules can't cover (a strange dmesg error, porting a driver across kernel versions, "why is my mic silent?"),
-      each step gets an <b>Ask AI</b> button. It sends that step together with the tool's evidence to Claude (<code>${esc(a.model)}</code>)
-      and shows you exactly what was sent.</p>
-    ${a.enabled ? (a.has_key ? '' : '<p class="err small">Start the tool with <code>ANTHROPIC_API_KEY=sk-ant-… ./run.sh</code></p>')
-      : `<p class="small">To turn it on: add <code>ai: {enabled: true}</code> to workspace.yaml and start with
-         <code>ANTHROPIC_API_KEY=sk-ant-… ./run.sh</code>. The key stays in your environment and is never written to a file.
-         Your form, snippets and dmesg lines are sent to Anthropic when you press Ask.</p>`}`;
+  const state = !a.enabled ? '<span class="pill">off</span>' : a.ready ? '<span class="pill ok">on</span>' : '<span class="pill warn">not ready</span>';
+  $('#ai-card').innerHTML = `<h3>✦ Ask Claude ${state}</h3>
+    <p>For what the rules can't cover, like a strange dmesg error, porting a driver to your kernel version, or "why is my mic silent?",
+      every step has <b>✦ Ask Claude</b>, and the workspace has <b>✦ Ask</b> for the whole device. Your question goes out
+      together with the tool's evidence (form, checks, what the driver reads, dmesg, your board-file block), you can
+      ask follow-ups, and you can always see exactly what was sent.</p>
+    <p class="small">Using: <b>${esc(a.label)}</b>.
+      ${a.backend === 'claude-code' ? 'This runs on your Claude Code login, so there is no API key to manage. Tools are disabled: it reads the evidence and answers, and never touches your files.' : 'Uses ANTHROPIC_API_KEY from the environment; the key is never stored.'}
+      ${!a.enabled ? 'Turn it on with <code>ai: {enabled: true}</code> in workspace.yaml.' : (!a.ready ? `<span class="err">${a.backend === 'claude-code' ? 'The claude CLI was not found on PATH.' : 'ANTHROPIC_API_KEY is not set.'}</span>` : '')}</p>`;
 }
 
 document.addEventListener('click', e => {

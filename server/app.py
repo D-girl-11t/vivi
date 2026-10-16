@@ -227,13 +227,15 @@ def create_periph(q, body):
 def ask(q, body):
     pid = body['id']
     pl = plan(WS.periph_form(pid), KB, WS, WS.progress().get(pid, {}))
-    step = next((s for s in pl['steps'] if s['id'] == body.get('step')), None)
+    step = next((s for s in pl['steps'] if s['id'] == body.get('step')), None)   # None = the device as a whole
     ctx = ai.build_context(WS, WS.periph_text(pid), pl, step)
-    question = (body.get('question') or '').strip() or 'Explain this step for a beginner, and what usually goes wrong here.'
+    question = (body.get('question') or '').strip() or (
+        'Explain this step for a beginner, and what usually goes wrong here.' if step else
+        'Where am I in this bring-up, what is the next thing to do, and why?')
     if body.get('preview'):
         return {'context': ctx}
     try:
-        res = ai.ask(WS, ctx, question)
+        res = ai.ask(WS, ctx, question, body.get('history'))
     except RuntimeError as e:
         raise ApiError(str(e))
     res['context'] = ctx
@@ -486,7 +488,8 @@ def main():
     srv.daemon_threads = True
     print(f'Bring-up Studio on http://{a.host}:{a.port}  (workspace {WS.root})')
     if ai.config(WS)['enabled']:
-        print(f"AI helper on ({ai.config(WS)['model']}); API key {'found' if ai.config(WS)['has_key'] else 'MISSING: set ANTHROPIC_API_KEY'}")
+        c = ai.config(WS)
+        print(f"AI helper on: {c['label']}" + ('' if c['ready'] else ' (NOT READY: ' + ('claude CLI not found' if c['backend'] == 'claude-code' else 'set ANTHROPIC_API_KEY') + ')'))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

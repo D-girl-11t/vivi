@@ -1,14 +1,22 @@
 """Optional AI helper: ask Claude about the current step, with the tool's evidence attached.
 
-Off unless workspace.yaml has `ai: {enabled: true}`. The API key is read from the
-ANTHROPIC_API_KEY environment variable and is never written to disk. Every answer
-comes back with the exact context that was sent, so nothing leaves the machine unseen.
+Off unless workspace.yaml has `ai: {enabled: true}`. Two backends:
+
+  claude-code  runs the Claude Code CLI you already use (`claude -p`), so it rides on
+               your existing login: no API key to manage. Tools are disabled, so it
+               can only read the evidence we send and answer; it can't touch files.
+  api          calls the Claude API directly with ANTHROPIC_API_KEY from the environment
+               (never written to disk).
+
+Every answer comes back with the exact context that was sent, so nothing leaves unseen.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
+import subprocess
 import urllib.error
 import urllib.request
 
@@ -33,8 +41,13 @@ Rules:
 
 def config(ws) -> dict:
     a = ws.cfg.get('ai') or {}
-    return {'enabled': bool(a.get('enabled')), 'model': a.get('model') or DEFAULT_MODEL,
-            'has_key': bool(os.environ.get('ANTHROPIC_API_KEY'))}
+    cli = shutil.which('claude')
+    backend = a.get('backend') or ('claude-code' if cli else 'api')
+    ready = bool(cli) if backend == 'claude-code' else bool(os.environ.get('ANTHROPIC_API_KEY'))
+    model = a.get('model') or ('' if backend == 'claude-code' else DEFAULT_MODEL)
+    return {'enabled': bool(a.get('enabled')), 'backend': backend, 'model': model,
+            'label': (model or 'your Claude Code default model') + (' via Claude Code' if backend == 'claude-code' else ' via API'),
+            'ready': ready, 'has_key': ready, 'cli': cli}
 
 
 def _clip(s, n):
@@ -84,15 +97,56 @@ def build_context(ws, form_text: str, plan: dict, step: dict | None) -> str:
     return '\n\n'.join(parts)
 
 
-def ask(ws, context: str, question: str) -> dict:
+def _prompt(context: str, question: str, history: list | None) -> list[dict]:
+    msgs = [{'role': 'user', 'content': f"{context}\n\nQUESTION: {(history or [{}])[0].get('q') or question}"}]
+    for i, turn in enumerate(history or []):
+        msgs.append({'role': 'assistant', 'content': turn.get('a', '')})
+        nxt = history[i + 1]['q'] if i + 1 < len(history) else question
+        msgs.append({'role': 'user', 'content': nxt})
+    return msgs
+
+
+def ask(ws, context: str, question: str, history: list | None = None) -> dict:
     cfg = config(ws)
     if not cfg['enabled']:
         raise RuntimeError('AI helper is off. Set `ai: {enabled: true}` in workspace.yaml (⚙).')
+    msgs = _prompt(context, question, history)
+    if cfg['backend'] == 'claude-code':
+        return _ask_claude_code(ws, cfg, msgs)
+    return _ask_api(cfg, msgs)
+
+
+def _ask_claude_code(ws, cfg, msgs) -> dict:
+    if not cfg['cli']:
+        raise RuntimeError('`claude` (Claude Code CLI) not found on PATH. Install it, or set ai.backend: api')
+    # one prompt: earlier turns are replayed as a transcript
+    text = msgs[0]['content'] if len(msgs) == 1 else msgs[0]['content'] + '\n\n' + '\n\n'.join(
+        f"{'YOUR EARLIER ANSWER' if m['role'] == 'assistant' else 'FOLLOW-UP QUESTION'}:\n{m['content']}" for m in msgs[1:])
+    cmd = [cfg['cli'], '-p', '--output-format', 'json', '--tools', '', '--no-session-persistence',
+           '--strict-mcp-config', '--system-prompt', SYSTEM]
+    if cfg['model']:
+        cmd += ['--model', cfg['model']]
+    try:
+        r = subprocess.run(cmd, input=text, capture_output=True, text=True, timeout=300, cwd=ws.state_dir)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('Claude Code did not answer within 5 minutes')
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        raise RuntimeError(f'Claude Code failed (exit {r.returncode}): {(r.stderr or r.stdout).strip()[:400]}'
+                           + (' (not logged in? run `claude` once in a terminal)' if 'login' in (r.stderr + r.stdout).lower() else ''))
+    if out.get('is_error'):
+        raise RuntimeError(f"Claude Code error: {str(out.get('result'))[:400]}")
+    models = list((out.get('modelUsage') or {}).keys())
+    return {'answer': out.get('result', ''), 'model': (models[0] if models else 'claude') + ' via Claude Code',
+            'cost_usd': out.get('total_cost_usd'), 'seconds': round((out.get('duration_ms') or 0) / 1000, 1)}
+
+
+def _ask_api(cfg, msgs) -> dict:
     key = os.environ.get('ANTHROPIC_API_KEY')
     if not key:
         raise RuntimeError('ANTHROPIC_API_KEY is not set. Start the tool with:  ANTHROPIC_API_KEY=sk-... ./run.sh')
-    body = {'model': cfg['model'], 'max_tokens': 1500, 'system': SYSTEM,
-            'messages': [{'role': 'user', 'content': f"{context}\n\nQUESTION: {question}"}]}
+    body = {'model': cfg['model'], 'max_tokens': 1500, 'system': SYSTEM, 'messages': msgs}
     req = urllib.request.Request(API_URL, data=json.dumps(body).encode(), method='POST', headers={
         'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'})
     try:

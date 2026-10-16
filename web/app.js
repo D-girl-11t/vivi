@@ -247,7 +247,7 @@ function stepHtml(s, i) {
     b += `<div class="result ${r.status}"><b>${ICON[r.status]} ${r.status}</b> ${esc(r.detail)}</div>`;
     b += `<div class="actions"><button class="primary" data-check="${esc(s.id)}">Check</button>`;
     if (s.examples) b += `<button data-examples="${esc(s.id)}">Examples from other boards</button>`;
-    b += `<button data-ask="${esc(s.id)}" title="${S.ai?.enabled ? 'Ask Claude about this step, with the evidence attached' : 'Optional AI helper: see the home page to turn it on'}">✦ Ask AI</button>`;
+    b += `<button data-ask="${esc(s.id)}" class="ai-btn" title="Ask Claude about this step, with the evidence attached">✦ Ask Claude</button>`;
     b += r.status === 'pass' && /marked done/.test(r.detail) ? `<button data-manual="${esc(s.id)}" data-done="">Undo done</button>`
       : r.status !== 'pass' ? `<button data-manual="${esc(s.id)}" data-done="1">Mark done</button>` : '';
     b += `</div></div>`;
@@ -285,29 +285,53 @@ $('#right').addEventListener('click', e => {
 });
 $('#center').addEventListener('click', e => { const f = e.target.closest('[data-ex-file]'); if (f) openFile(f.dataset.exFile, +f.dataset.line); });
 
-// ------------------------------------------------------------ optional AI helper
+// ------------------------------------------------------------ AI helper (Claude)
+// A small chat about one step, or about the whole device. Each question goes out with the
+// tool's evidence (form, steps and checks, what the driver reads, dmesg, board-file block).
+const AI_SUGGEST = {
+  step: ['Explain this step like I am new to this', 'Why is this check failing, and how do I fix it?', 'What usually goes wrong here?', 'Show me exactly what to change'],
+  device: ['Where am I and what should I do next?', 'Explain the whole path for this device', 'What is most likely to go wrong?', 'Which parts of the datasheet matter here?'],
+};
+function aiReady() { return S.ai?.enabled && S.ai?.ready; }
+function aiOffNote() {
+  if (!S.ai?.enabled) return `The AI helper is <b>off</b>. Turn it on in ⚙ with <code>ai: {enabled: true}</code>.`;
+  return S.ai.backend === 'claude-code' ? 'The <code>claude</code> CLI was not found on PATH.' : '<code>ANTHROPIC_API_KEY</code> is not set.';
+}
 function askAi(stepId) {
-  const s = S.plan.steps.find(x => x.id === stepId);
-  const off = !S.ai?.enabled || !S.ai?.has_key;
-  setView(`<div class="bar"><b>✦ Ask AI: ${esc(s.title)}</b></div>`,
-    `${off ? `<div class="callout warn">The AI helper is ${S.ai?.enabled ? 'on, but <b>ANTHROPIC_API_KEY</b> is not set' : '<b>off</b>'}.
-       Turn it on with <code>ai: {enabled: true}</code> in ⚙ workspace.yaml and start the tool with <code>ANTHROPIC_API_KEY=sk-ant-… ./run.sh</code>.
-       You can still preview what would be sent.</div>` : ''}
-     <textarea id="ai-q" class="editor" style="min-height:90px" placeholder="Your question (empty = explain this step and what usually goes wrong)"></textarea>
-     <div class="actions"><button class="primary" id="ai-go" ${off ? 'disabled' : ''}>Ask ${esc(S.ai?.model || '')}</button><button id="ai-ctx">Show what gets sent</button></div>
-     <div id="ai-out"></div>`);
+  const s = stepId ? S.plan.steps.find(x => x.id === stepId) : null;
+  const chat = { stepId, history: [] };
+  setView(`<div class="bar"><b>✦ Ask Claude: ${esc(s ? s.title : S.plan.name + ' (whole device)')}</b>
+      <span class="muted small">${esc(S.ai?.label || '')}</span></div>`,
+    `${aiReady() ? '' : `<div class="callout warn">${aiOffNote()} You can still preview what would be sent.</div>`}
+     <div id="ai-thread"></div>
+     <div class="ai-suggest">${AI_SUGGEST[s ? 'step' : 'device'].map(q => `<button class="chip-btn" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+     <div class="ai-input"><textarea id="ai-q" rows="2" placeholder="Ask anything about ${s ? 'this step' : 'this device'}… (Enter to send, Shift+Enter for a new line)"></textarea>
+       <button class="primary" id="ai-go" ${aiReady() ? '' : 'disabled'}>Ask</button></div>
+     <div class="actions"><button id="ai-ctx">Show what gets sent</button>${s ? '' : ''}</div>
+     <p class="muted small">Claude sees only the evidence shown under "what gets sent". It can't read or change your files.
+       Answers can be wrong: check them against the binding, the driver source and your board.</p>
+     <div id="ai-ctx-out"></div>`);
+  const send = q => guard(async () => {
+    q = (q || $('#ai-q').value).trim(); if (!q || !aiReady()) return;
+    $('#ai-q').value = ''; const b = $('#ai-go'); b.disabled = true; b.textContent = '…';
+    const th = $('#ai-thread');
+    th.insertAdjacentHTML('beforeend', `<div class="ai-msg me">${esc(q)}</div><div class="ai-msg bot pending">thinking…</div>`);
+    th.lastElementChild.scrollIntoView({ block: 'end' });
+    try {
+      const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, question: q, history: chat.history } });
+      chat.history.push({ q, a: r.answer });
+      th.lastElementChild.outerHTML = `<div class="ai-msg bot md">${md(r.answer)}<div class="ai-meta">${esc(r.model || '')}${r.seconds ? ` · ${r.seconds}s` : ''}${r.cost_usd ? ` · $${r.cost_usd.toFixed(3)}` : ''}</div></div>`;
+    } catch (e) { th.lastElementChild.outerHTML = `<div class="ai-msg bot err">⚠ ${esc(e.message)}</div>`; }
+    finally { b.disabled = !aiReady(); b.textContent = 'Ask'; }
+  });
+  $('#ai-go').onclick = () => send();
+  $('#ai-q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+  $$('.ai-suggest [data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
   $('#ai-ctx').onclick = () => guard(async () => {
     const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, preview: true } });
-    $('#ai-out').innerHTML = `<h4>Context sent with your question</h4><pre class="raw">${esc(r.context)}</pre>`;
+    $('#ai-ctx-out').innerHTML = `<h4>Context sent with each question</h4><pre class="raw">${esc(r.context)}</pre>`;
   });
-  $('#ai-go').onclick = () => guard(async () => {
-    const b = $('#ai-go'); b.disabled = true; b.textContent = 'thinking…';
-    try {
-      const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, question: $('#ai-q').value } });
-      $('#ai-out').innerHTML = `<div class="ai-box md">${md(r.answer)}</div><p class="muted small">${esc(r.model)} · answers can be wrong: verify against the binding, the driver source and your board.</p>
-        <details><summary class="small">Context that was sent</summary><pre class="raw">${esc(r.context)}</pre></details>`;
-    } finally { b.disabled = false; b.textContent = 'Ask again'; }
-  });
+  $('#ai-q').focus();
 }
 
 // ------------------------------------------------------------ forms & settings
@@ -333,6 +357,7 @@ $('#btn-form').onclick = () => guard(async () => {
   });
 });
 $('#btn-new').onclick = () => { location.href = '/#add'; };
+$('#btn-ask').onclick = () => { if (S.plan) askAi(null); };
 $('#btn-settings').onclick = () => guard(async () => {
   const r = await api('/api/config');
   editText('workspace.yaml', r.text, '<p class="muted small">Point <code>kernel_src</code> at the kernel tree your board runs, set <code>board.transport: ssh</code> plus <code>host</code> once key login works.</p>',
