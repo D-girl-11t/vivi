@@ -22,33 +22,64 @@ async function load() {
 }
 
 function renderSetup() {
-  const st = O.status, sc = st.board.scanned, c = O.config;
-  const card = (state, title, body, btn) => `<div class="setup-card ${state}">
-    <div class="sc-head"><span class="state-dot ${state}"></span><b>${title}</b></div>
-    <div class="sc-body">${body}</div>${btn || ''}</div>`;
-  $('#setup-cards').innerHTML = [
-    card(st.soc.id ? 'ok' : 'todo', 'SoC profile',
-      st.soc.id ? `${esc(st.soc.title)}${st.soc.status === 'starter' ? ' <span class="pill warn">starter</span>' : ''}` : 'not found',
-      `<button data-act="setup">Change</button>`),
-    card(st.source.ok ? 'ok' : 'todo', 'Kernel source',
-      st.source.ok ? `<code>${esc(st.source.board_dts)}</code><div class="muted small ellipsis" title="${esc(st.source.kernel)}">${esc(st.source.kernel)}</div>`
-        : 'Not set: source checks and driver lookups are off. Point it at the kernel your board runs.',
-      `<button data-act="setup" class="${st.source.ok ? '' : 'primary'}">${st.source.ok ? 'Change' : 'Set up'}</button>`),
-    card(sc && !sc.demo ? 'ok' : (sc ? 'warn' : 'todo'), 'Board',
-      sc ? (sc.demo ? 'Demo snapshot: device tree is real, drivers and dmesg are not. Connect your board over ssh.'
-        : `${esc(st.board.model || '')}<div class="muted small">${esc(st.board.transport)} · scanned ${esc(sc.time)} · ${st.board.findings.bound} bound, <b>${st.board.findings.unbound.length}</b> unbound</div>`)
-        : `${esc(st.board.transport)} · not scanned yet`,
-      `<div class="row-btns"><button data-act="setup">${c.board.transport === 'ssh' ? 'Change' : 'Connect'}</button>${st.board.live ? '<button data-act="scan">⟳ Scan now</button>' : ''}</div>`),
-  ].join('');
+  const st = O.status, src = st.source, b = st.board, sc = b.scanned, c = O.config;
+  const live = sc && !sc.demo, mm = (v => v ? v.split('.').slice(0, 2).join('.') : null);
+  const mismatch = live && b.release && src.version && mm(b.release) !== mm(src.version);
+  const srcState = src.ok && !src.warnings.length ? 'ok' : (src.ok ? 'warn' : 'todo');
+  const brdState = live ? 'ok' : (sc ? 'warn' : 'todo');
+
+  // what the tool can do right now, in plain words
+  const cap = (on, label, why) => `<span class="cap ${on}" title="${esc(why)}"><span class="state-dot ${on}"></span>${label}</span>`;
+  let h = `<div class="caps">
+    ${cap(live ? 'ok' : (sc ? 'warn' : 'todo'), 'Live board checks', 'driver enabled, .dtb booted, driver bound, /dev nodes, tools: needs the board over ssh')}
+    ${cap(src.ok ? 'ok' : 'todo', 'Source checks & file links', 'pins, controller, device node, opening the .dts at the right line: needs the kernel source')}
+    ${cap(src.tree_ok ? 'ok' : 'todo', 'Driver & pin lookups', 'wizard search, is-there-a-driver, CONFIG_ names, reading the driver code, Pins tab: needs the kernel source')}
+  </div>`;
+  if (mismatch) h += `<div class="callout warn"><b>⚠ Board and source are different kernels.</b> The board runs <code>${esc(b.release)}</code>, but the source tree is
+    <code>${esc(src.version)}</code>${src.flavor ? ` (${esc(src.flavor)})` : ''}. Steps would compare your board against code it isn't running.
+    Point <b>Kernel source</b> at the tree that built the board's kernel.</div>`;
+
+  const card = (state, title, stateText, body, uses, btn) => `<div class="setup-card ${state}">
+    <div class="sc-head"><span class="state-dot ${state}"></span><b>${title}</b><span class="sc-state ${state}">${stateText}</span></div>
+    <div class="sc-body">${body}</div>
+    <div class="sc-uses">${uses}</div>${btn}</div>`;
+  const kv = (k, v, title) => v ? `<div class="kv"><span>${k}</span><span class="ellipsis" title="${esc(title || v)}">${v}</span></div>` : '';
+  const warns = list => list.map(w => `<div class="sc-warn">⚠ ${esc(w)}</div>`).join('');
+
+  h += '<div class="setup-grid">';
+  h += card(st.soc.id ? 'ok' : 'todo', 'SoC profile', st.soc.id ? (st.soc.status === 'starter' ? 'starter' : 'ready') : 'missing',
+    st.soc.id ? kv('Chip', esc(st.soc.title)) + kv('Profile', `<code>knowledge/soc/${esc(st.soc.id)}.yaml</code>`) : warns([`profile '${c.soc}' not found`]),
+    'How this chip names its pins and controllers, and its camera layout.', `<button data-act="setup">Change</button>`);
+
+  h += card(srcState, 'Kernel source', src.ok ? (src.warnings.length ? 'check' : 'connected') : (src.configured ? 'problem' : 'not set'),
+    (src.tree_ok ? kv('Kernel', `${esc(src.version || '?')}${src.flavor ? ` <span class="muted">· ${esc(src.flavor)}</span>` : ''}`)
+      + kv('Board file', `<code>${esc((src.board_dts || '').split('/').pop())}</code>`, src.board_dts)
+      + kv('Folder', esc(src.kernel), src.kernel)
+      : `<p class="muted">The kernel tree that built your board's kernel: your Yocto <code>kernel-source</code>, or your vendor's kernel at the matching tag.</p>`)
+    + warns(src.warnings),
+    'Used for: editing guidance, pin names, finding drivers.',
+    `<button data-act="setup" class="${src.ok && !src.warnings.length ? '' : 'primary'}">${src.configured ? 'Change' : 'Set up'}</button>`);
+
+  h += card(brdState, 'Board', live ? 'connected' : (sc ? 'demo data' : (b.live ? 'not scanned' : 'not connected')),
+    live ? kv('Model', esc(b.model || '?')) + kv('Kernel', esc(b.release || '?')) + kv('Via', `<code>${esc(b.transport)}</code>`)
+      + kv('Scanned', esc(sc.time)) + kv('Drivers', `${b.findings.bound} bound · <b class="${b.findings.unbound.length ? 'err' : ''}">${b.findings.unbound.length} not bound</b> · ${b.findings.deferred.length} deferred`)
+      : sc ? `<p class="muted">Showing a <b>demo snapshot</b>: the device tree is real, but drivers, kernel config and dmesg are made up. Connect your board to see the real thing.</p>`
+        : `<p class="muted">${b.live ? 'Connected settings saved. Press <b>Scan now</b> to read the board.' : 'Reach the board over ssh to see what is really running on it.'}</p>`,
+    'Used for: checking what really runs, which drivers bound, dmesg errors.',
+    `<div class="row-btns"><button data-act="setup" class="${live ? '' : 'primary'}">${c.board.transport === 'ssh' ? 'Change' : 'Connect'}</button>${b.live ? '<button data-act="scan">⟳ Scan now</button>' : ''}</div>`);
+  h += '</div>';
+  $('#setup-cards').innerHTML = h;
 }
 
 function renderDevices() {
   const cards = O.items.map(d => {
     const pct = d.total ? Math.round(100 * d.done / d.total) : 0;
     return `<a class="dev-card" href="/app?p=${encodeURIComponent(d.id)}">
-      <div class="dc-head"><b>${esc(d.name)}</b>${d.needs_driver ? '<span class="pill warn" title="No driver for this device in your kernel tree: the guide includes the Driver layer">needs a driver</span>' : ''}</div>
+      <div class="dc-head"><b>${esc(d.name)}</b>${d.unfilled?.includes('compatible') ? '<span class="pill">not filled in</span>' : ''}${d.needs_driver ? '<span class="pill warn" title="No driver for this device in your kernel tree: the guide includes the Driver layer">needs a driver</span>' : ''}</div>
       <div class="muted small">${esc(d.bus || '?')} → ${esc(d.subsystem || '?')}</div>
-      ${d.error ? `<div class="err small">⚠ ${esc(d.error)}</div>` : `
+      ${d.error ? `<div class="err small">⚠ ${esc(d.error)}</div>` : d.unfilled?.includes('compatible') ? `
+      <div class="callout warn small">Still the <b>blank template</b> (<code>compatible: vendor,chip</code>). Open it and fill in the form,
+        or delete <code>peripherals/${esc(d.id)}.yaml</code> and use <b>＋ Add a device</b>.</div>` : `
       <div class="bar"><span style="width:${pct}%"></span></div>
       <div class="small">${d.done}/${d.total} steps done</div>
       ${d.next ? `<div class="small next">Next: <b>${esc(d.next.title)}</b> <span class="layer">${esc(d.next.layer)}</span></div>` : '<div class="small next">🎉 all green</div>'}`}

@@ -49,10 +49,9 @@ def status(q, body):
         'board': {'transport': WS.transport.describe(), 'live': WS.transport.live,
                   'scanned': snap['meta'] if snap else None,
                   'model': snap['system'].get('model') if snap else None,
+                  'release': _release(snap['system'].get('uname')) if snap and not snap['meta'].get('demo') else None,
                   'findings': snap['findings'] if snap else None},
-        'source': {'kernel': WS.ktree.root if WS.ktree else None,
-                   'board_dts': WS.dts.rel(WS.dts.board_dts) if WS.dts else None,
-                   'ok': bool(WS.dts and WS.dts.ok)},
+        'source': source_info(),
         'ai': ai.config(WS),
         'problems': [p for p in [
             None if soc else f"SoC profile '{WS.cfg.get('soc')}' not found in knowledge/soc/",
@@ -60,6 +59,30 @@ def status(q, body):
             None if (WS.dts and WS.dts.ok) else 'board_dts not found: set it in workspace.yaml',
         ] if p],
     }
+
+
+def _release(uname: str | None) -> str | None:
+    m = re.search(r'\b(\d+\.\d+(?:\.\d+)?[\w.+-]*)', uname or '')
+    return m.group(1) if m else None
+
+
+def source_info() -> dict:
+    """Kernel source state, plus warnings a beginner would not think to check."""
+    kt, cfg = WS.ktree, WS.cfg
+    out = {'kernel': kt.root if kt else None, 'configured': cfg.get('kernel_src'),
+           'board_dts': WS.dts.rel(WS.dts.board_dts) if WS.dts else cfg.get('board_dts'),
+           'ok': bool(WS.dts and WS.dts.ok), 'tree_ok': bool(kt and kt.ok), 'warnings': []}
+    if cfg.get('kernel_src') and not kt:
+        out['warnings'].append(f"kernel_src folder not found: {cfg['kernel_src']}")
+    if kt:
+        out.update(kt.info())
+        if not kt.ok:
+            out['warnings'].append('this folder has no drivers/ directory: is it really a kernel tree?')
+        if kt.root.startswith(('/tmp/', '/var/tmp/')):
+            out['warnings'].append('temporary copy under /tmp: it will disappear. Point it at your own kernel tree')
+        if kt.ok and not (WS.dts and WS.dts.ok):
+            out['warnings'].append(f"board file not found in that tree: {cfg.get('board_dts')}")
+    return out
 
 
 @route('GET', '/api/config')
@@ -95,6 +118,10 @@ def overview(q, body):
     items = []
     for p in WS.peripherals():
         it = dict(p)
+        form = {} if p.get('error') else WS.periph_form(p['id'])
+        # still the untouched blank template? say so instead of planning nonsense
+        it['unfilled'] = [k for k, blank in (('compatible', 'vendor,chip'), ('description', 'what it is and what you want from it'))
+                          if form.get(k) == blank]
         if not p.get('error'):
             try:
                 pl = plan(WS.periph_form(p['id']), KB, WS, WS.progress().get(p['id'], {}))
@@ -103,7 +130,7 @@ def overview(q, body):
                 it.update({'total': len(pl['steps']),
                            'done': sum(s['result']['status'] == 'pass' for s in pl['steps']),
                            'next': cur and {'title': cur['title'], 'layer': cur['layer']},
-                           'needs_driver': port.get('state') == 'missing' and not port.get('src_ok'),
+                           'needs_driver': port.get('state') == 'missing' and not port.get('src_ok') and 'compatible' not in it['unfilled'],
                            'problems': pl['problems']})
             except Exception as e:   # one broken form must not break the homepage
                 it['error'] = f'{type(e).__name__}: {e}'

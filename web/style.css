@@ -194,3 +194,16 @@ a.btn:hover { border-color: var(--accent); }
 .callout.bad { border-left-color: var(--fail); background: #fff5f5; }
 .topnav { color: var(--accent); text-decoration: none; font-weight: 600; }
 .ai-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel); margin-top: 10px; }
+.caps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.cap { display: inline-flex; align-items: center; font-size: 13px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); cursor: help; }
+.cap.ok { border-color: var(--pass); } .cap.warn { border-color: var(--unknown); } .cap.todo { color: var(--muted); }
+.sc-head { display: flex; align-items: center; }
+.sc-state { margin-left: auto; font-size: 11.5px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.sc-state.ok { color: var(--pass); border-color: var(--pass); } .sc-state.warn { color: var(--unknown); border-color: var(--unknown); }
+.sc-state.todo { color: var(--fail); border-color: var(--fail); }
+.setup-card.warn { border-color: var(--unknown); }
+.kv { display: grid; grid-template-columns: 78px 1fr; gap: 6px; padding: 2px 0; font-size: 13px; }
+.kv > span:first-child { color: var(--muted); }
+.sc-warn { font-size: 12.5px; color: #8a5a00; background: #fff8e1; border-radius: 6px; padding: 4px 8px; margin-top: 6px; }
+.sc-uses { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 6px; }
+.sc-body p { margin: 0; font-size: 13px; }

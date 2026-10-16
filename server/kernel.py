@@ -27,6 +27,30 @@ class KernelTree:
     def ok(self) -> bool:
         return os.path.isdir(os.path.join(self.root, 'drivers'))
 
+    def info(self) -> dict:
+        """Kernel version (from the top Makefile) and where the tree came from (from git, if any)."""
+        out = {'version': None, 'origin': None, 'flavor': None}
+        try:
+            mk = _read(os.path.join(self.root, 'Makefile'))[:2000]
+            v = {k: (re.search(rf'^{k}\s*=\s*(\S*)', mk, re.M) or [None, ''])[1] for k in ('VERSION', 'PATCHLEVEL', 'SUBLEVEL', 'EXTRAVERSION')}
+            if v['VERSION']:
+                out['version'] = f"{v['VERSION']}.{v['PATCHLEVEL']}.{v['SUBLEVEL'] or 0}{v['EXTRAVERSION']}"
+        except OSError:
+            pass
+        try:
+            m = re.search(r'url\s*=\s*(\S+)', _read(os.path.join(self.root, '.git', 'config')))
+            out['origin'] = m.group(1) if m else None
+        except OSError:
+            pass
+        o = (out['origin'] or '').lower()
+        out['flavor'] = next((name for key, name in [('nxp-imx', 'NXP linux-imx'), ('linux-imx', 'NXP linux-imx'),
+                                                      ('torvalds', 'mainline'), ('stable', 'mainline stable'),
+                                                      ('raspberrypi', 'Raspberry Pi'), ('stm32', 'ST'),
+                                                      ('qualcomm', 'Qualcomm'), ('linaro', 'Linaro')] if key in o), None)
+        if not out['flavor'] and 'work-shared' in self.root:
+            out['flavor'] = 'Yocto kernel-source'
+        return out
+
     def rel(self, p: str) -> str:
         return os.path.relpath(p, self.root)
 
