@@ -1,6 +1,9 @@
 id: other
 title: Other / custom
 summary: No standard subsystem. Use sysfs, a character device, or write your own driver.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/misc
+kconfig_prefix: ''
 steps:
   - id: verify
     layer: userspace

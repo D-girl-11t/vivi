@@ -1,6 +1,9 @@
 id: iio
 title: IIO (sensors, ADC/DAC)
 summary: Industrial I/O, covering accelerometers, gyros, ADCs, pressure and light sensors. /sys/bus/iio/devices.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/iio            # pick the category subfolder (accel, light, pressure...) with driver_dir: in the form
+kconfig_prefix: ''
 live: {kind: sysfs, hint: "/sys/bus/iio/devices/iio:device0/in_accel_x_raw"}
 steps:
   - id: iiodev

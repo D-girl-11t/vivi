@@ -1,6 +1,9 @@
 id: v4l2
 title: V4L2 (video)
 summary: Cameras and video devices, /dev/videoN. Tools v4l2-ctl, gst-launch-1.0.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/media/i2c
+kconfig_prefix: 'VIDEO_'
 live: {kind: video}
 steps:
   - id: videodev

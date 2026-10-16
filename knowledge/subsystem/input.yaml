@@ -1,6 +1,9 @@
 id: input
 title: Input (events)
 summary: Buttons, keys, rotary encoders, touchscreens. /dev/input/eventN, tool evtest.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/input/misc
+kconfig_prefix: 'INPUT_'
 live: {kind: input}
 steps:
   - id: inputdev

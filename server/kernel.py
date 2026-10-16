@@ -88,6 +88,43 @@ class KernelTree:
                 return f'{k}: {v[k]}'
         return ''
 
+    # ---------- finding the right compatible string ----------
+    def search_compatibles(self, q: str, limit: int = 12) -> list[dict]:
+        """Part name (e.g. "imx219", "bme280") -> compatible strings this tree knows, with where they appear."""
+        q = re.sub(r'[^A-Za-z0-9._,+-]', '', q)
+        if len(q) < 2:
+            return []
+        core = r'([A-Za-z0-9-]+,)?[A-Za-z0-9._+-]*' + re.escape(q.split(',')[-1]) + r'[A-Za-z0-9._+-]*'
+        hits: dict[str, dict] = {}
+        for where, rx, args in (('binding', r'(- |const: )"?' + core, ['--include=*.yaml', 'Documentation/devicetree/bindings']),
+                                ('driver', r'\.compatible\s*=\s*"' + core + '"', ['--include=*.c', 'drivers', 'sound'])):
+            dirs = [a for a in args if not a.startswith('--') and os.path.isdir(os.path.join(self.root, a))]
+            if not dirs:
+                continue
+            try:
+                res = subprocess.run(['grep', '-rIoiE', *[a for a in args if a.startswith('--')], rx, *dirs],
+                                     cwd=self.root, capture_output=True, text=True, timeout=60)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            for line in res.stdout.splitlines():
+                f, _, c = line.partition(':')
+                c = re.sub(r'^(- |const: |\.compatible\s*=\s*)', '', c).strip('"')
+                if where == 'binding' and ',' not in c and c not in hits:
+                    continue      # bare words in YAML lists are usually property names, not compatibles
+                h = hits.setdefault(c, {'compatible': c, 'binding': None, 'driver': None})
+                h[where] = h[where] or f
+        out = sorted(hits.values(), key=lambda h: (not h['driver'], not h['binding'], len(h['compatible'])))
+        return out[:limit]
+
+    @staticmethod
+    def guess_kind(binding_file: str | None, driver_file: str | None) -> dict:
+        """Suggest bus and subsystem from where the binding/driver lives in the tree."""
+        p = (binding_file or '') + ' ' + (driver_file or '')
+        sub = next((s for k, s in [('/sound/', 'alsa'), ('sound/', 'alsa'), ('/media/', 'v4l2'), ('/iio/', 'iio'),
+                                   ('/input/', 'input'), ('/hwmon/', 'hwmon'), ('/counter/', 'counter'),
+                                   ('/serial/', 'tty')] if k in p), None)
+        return {'subsystem': sub}
+
     # ---------- driver + Kconfig ----------
     @lru_cache(maxsize=256)
     def driver(self, compat: str, bus_hint: str = '') -> dict | None:
@@ -157,3 +194,86 @@ class KernelTree:
             if os.path.abspath(d) == self.root or not d.startswith(self.root):
                 return None
             d = os.path.dirname(d)
+
+
+# ---------- what a driver asks the device tree for ----------
+_REQ_PATTERNS = [
+    # (kind, regex); group 1 = name. Works for in-tree and out-of-tree drivers alike.
+    ('property', r'(?:of|device|fwnode)_property_read_\w+\s*\([^,]+,\s*"([^"]+)"'),
+    ('property', r'(?:of|device|fwnode)_property_(?:present|count_\w+)\s*\([^,]+,\s*"([^"]+)"'),
+    ('clock', r'(?:devm_)?clk_get(?:_optional)?(?:_enabled)?\s*\([^,]+,\s*"([^"]+)"'),
+    ('clock', r'(?:devm_)?clk_get(?:_optional)?(?:_enabled)?\s*\([^,]+,\s*(NULL)\s*\)'),
+    ('clock', r'devm_v4l2_sensor_clk_get(?:_legacy)?\s*\([^,]+,\s*"([^"]+)"'),     # V4L2 sensor helper (6.17+)
+    ('clock', r'devm_v4l2_sensor_clk_get(?:_legacy)?\s*\([^,]+,\s*(NULL)\s*[,)]'),
+    ('gpio', r'(?:devm_)?gpiod_get(?:_optional)?(?:_index)?\s*\([^,]+,\s*"([^"]+)"'),
+    ('supply', r'(?:devm_)?regulator_get(?:_optional)?\s*\([^,]+,\s*"([^"]+)"'),
+]
+
+
+def driver_requirements(text: str) -> dict:
+    """Read a driver's C source and list what it looks up from the device tree.
+
+    This is the most honest answer to "which properties does my node need?":
+    it is what the code actually asks for, so it also works for drivers that
+    have no binding document (out-of-tree vendor drivers).
+    """
+    defines = dict(re.findall(r'^#define\s+(\w+)\s+\(?\s*(\d+)(?:U?LL?)?\s*\)?\s*$', text, re.M))
+    num = lambda tok: int(defines.get(tok.strip(), tok.strip())) if re.fullmatch(r'\d+', defines.get(tok.strip(), tok.strip())) else None
+    req = {'compatibles': re.findall(r'\.compatible\s*=\s*"([^"]+)"', text),
+           'property': [], 'clock': [], 'gpio': [], 'supply': [], 'optional': [],
+           'endpoint': False, 'irq': False, 'lanes': [], 'bus': None}
+    for kind, rx in _REQ_PATTERNS:
+        for m in re.finditer(rx, text):
+            name = '(unnamed, the first in `clocks`)' if m.group(1) == 'NULL' else m.group(1)
+            if name not in req[kind]:
+                req[kind].append(name)
+            if '_optional' in m.group(0) and name not in req['optional']:
+                req['optional'].append(name)
+    # regulator_bulk_get with a static name table: static const char * const foo_supply_name[] = {"VANA", ...};
+    for m in re.finditer(r'(?:supply_names?|supplies)\s*\[\s*\w*\s*\]\s*=\s*\{([^}]*)\}', text):
+        for s in re.findall(r'"([^"]+)"', m.group(1)):
+            if s not in req['supply']:
+                req['supply'].append(s)
+    req['endpoint'] = bool(re.search(r'v4l2_fwnode_endpoint_(?:alloc_)?parse|of_graph_get_|fwnode_graph_get_next_endpoint', text))
+    req['link_frequencies'] = 'link_frequencies' in text or 'link-frequencies' in text
+    # link-frequency values the driver accepts (s64 foo_link_freq_menu[] = { 408000000, MACRO })
+    freqs = []
+    for m in re.finditer(r'link_freq\w*\s*\[\s*\]\s*=\s*\{([^}]*)\}', text):
+        for tok in re.findall(r'[\w]+', m.group(1)):
+            v = num(tok)
+            if v and v >= 1_000_000 and v not in freqs:       # skip array indices and enum values
+                freqs.append(v)
+    req['link_freq_values'] = freqs
+    # input clock the driver insists on (if (rate != FOO_XCLK_FREQ) return -EINVAL)
+    m = re.search(r'(?:xclk|inclk|extclk|mclk)\w*\)?\s*!=\s*(\w+)', text, re.I)
+    req['clock_hz'] = num(m.group(1)) if m else None
+    req['irq'] = bool(re.search(r'client->irq|platform_get_irq|of_irq_get|spi->irq', text))
+    req['lanes'] = sorted(set(re.findall(r'num_data_lanes\s*!=\s*(\d)', text)))
+    if re.search(r'module_i2c_driver|i2c_add_driver|struct i2c_driver', text):
+        req['bus'] = 'i2c'
+    elif re.search(r'module_spi_driver|struct spi_driver', text):
+        req['bus'] = 'spi'
+    elif re.search(r'module_platform_driver|struct platform_driver', text):
+        req['bus'] = 'platform'
+    # Kconfig `select`s the code needs, recognised from the helper APIs it calls
+    req['selects'] = [sym for rx, sym in [
+        (r'\bcci_(?:read|write)|devm_cci_regmap_init', 'V4L2_CCI_I2C'),
+        (r'devm_regmap_init_i2c|regmap_init_i2c', 'REGMAP_I2C'),
+        (r'devm_regmap_init_spi|regmap_init_spi', 'REGMAP_SPI'),
+        (r'v4l2_fwnode_', 'V4L2_FWNODE'),
+        (r'media_entity_pads_init', 'MEDIA_CONTROLLER'),
+        (r'v4l2_subdev_state|V4L2_SUBDEV_FL_HAS_DEVNODE', 'VIDEO_V4L2_SUBDEV_API'),
+    ] if re.search(rx, text)]
+    if 'V4L2_CCI_I2C' in req['selects']:          # CCI already pulls in regmap
+        req['selects'].remove('REGMAP_I2C')
+    # API hints that usually break when moving a driver between kernel versions
+    req['port_hints'] = [msg for rx, msg in [
+        (r'\.probe_new\s*=', '`.probe_new` was folded back into `.probe` (6.3+): rename it'),
+        (r'probe\s*\(\s*struct i2c_client\s*\*\s*\w+\s*,\s*const struct i2c_device_id', 'I2C probe() lost its i2c_device_id argument (6.3+)'),
+        (r'static\s+int\s+\w+_remove\s*\(\s*struct i2c_client', 'I2C remove() must return void (6.1+)'),
+        (r'struct v4l2_subdev_pad_config', 'v4l2_subdev_pad_config was replaced by v4l2_subdev_state (5.14+)'),
+        (r'v4l2_subdev_get_try_(?:format|crop|compose)', 'v4l2_subdev_get_try_*() became v4l2_subdev_state_get_*() (6.8+)'),
+        (r'v4l2_subdev_state_get_(?:format|crop)', 'uses v4l2_subdev_state_get_*() (6.8+ API): on an older kernel, swap back to v4l2_subdev_get_try_*()'),
+        (r'\.g_frame_interval|\.s_frame_interval', 'g/s_frame_interval moved from video ops to pad ops (6.8+)'),
+    ] if re.search(rx, text)]
+    return req

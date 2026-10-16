@@ -6,6 +6,7 @@ layers:
   - {id: pinmux,     title: Pinmux,       eli5: "Set the socket to the right shape"}
   - {id: controller, title: Controller,   eli5: "Switch on the room the socket is in"}
   - {id: node,       title: Device node,  eli5: "Tell the house what toy is there"}
+  - {id: driver,     title: Driver,       eli5: "No instruction book yet? Bring one and put it in the library"}
   - {id: kconfig,    title: Kernel config,eli5: "Make sure the instruction book is in the library"}
   - {id: deploy,     title: Deploy,       eli5: "Give the house its new map"}
   - {id: probe,      title: Probe,        eli5: "Did the book get matched to the toy?"}
@@ -158,3 +159,138 @@ common:
       };
     examples: {label: "{{ ctrl.label }}"}
     check: {type: source_status, label: "{{ ctrl.label }}", expect: okay}
+
+# Shown when the device's driver is not in your kernel tree (or you set
+# `driver_src:` in the form). Works for any device: sensor, codec, camera...
+driver_port:
+  - id: driver_get
+    layer: driver
+    when: port.active
+    title: "{% if port.state == 'not_built' %}Driver source is in the tree but not built{% else %}Get a driver for {{ dev.compatible }}{% endif %}"
+    why: |
+      Linux pairs a device-tree node with a driver by the `compatible` string. We searched
+      **your** kernel tree (`drivers/`, `sound/`) for `"{{ dev.compatible }}"`
+      {%- if port.state == 'missing' %} and found **no driver**. The node alone won't do anything.{% elif port.state == 'not_built' %}: the C file exists, but no Makefile line builds it.{% else %}.{% endif %}
+
+      Where drivers usually come from, best first:
+
+      * **A newer kernel or your SoC vendor's BSP.** Search on elixir.bootlin.com or in your vendor's kernel tree. If it's there, cherry-picking that commit is the cleanest route.
+      * **The module/board maker's kernel fork.** Camera and display makers often ship drivers in their own tree, for example the Raspberry Pi kernel or a vendor GitHub.
+      * **A sibling driver.** Chips in the same family often share most registers, so you adapt the closest one.
+      * **Write one** from the datasheet, starting from a similar driver in the same subsystem.
+    do: |
+      Save the driver's `.c` file somewhere (for example `drivers-extra/` in this workspace) and add to the form:
+      ```
+      driver_src: drivers-extra/{{ port.module }}.c
+      ```
+      {%- if port.src and not port.src_ok %}
+
+      ⚠ `{{ port.src }}` was not found (looked in the workspace and the kernel tree).
+      {%- elif port.src_ok and not port.src_compat_ok %}
+
+      ⚠ That file does not declare `"{{ dev.compatible }}"`. It declares: `{{ driver_req.compatibles|join('`, `') if driver_req else '?' }}`. Use the same string in the form.
+      {%- endif %}
+      {%- if driver_req %}
+
+      **Read from the driver code:** bus `{{ driver_req.bus or '?' }}`
+      {%- if driver_req.supply %}, supplies `{{ driver_req.supply|join('`, `') }}`{% endif %}
+      {%- if driver_req.clock %}, clock{% if driver_req.clock_hz %} at {{ driver_req.clock_hz }} Hz{% endif %}{% endif %}
+      {%- if driver_req.gpio %}, gpios `{{ driver_req.gpio|join('`, `') }}`{% endif %}
+      {%- if driver_req.endpoint %}, a graph endpoint{% if driver_req.lanes %} ({{ driver_req.lanes|join(' or ') }} data lanes){% endif %}{% endif %}.
+      {%- endif %}
+    command: "grep -rn '\"{{ dev.compatible }}\"' drivers/ sound/"
+    check: {type: driver_source}
+
+  - id: driver_integrate
+    layer: driver
+    when: port.active
+    title: "Add {{ port.module }}.c to the kernel build ({{ port.config }})"
+    why: |
+      A C file in the tree isn't built until two small hooks exist:
+
+      * **Makefile:** `obj-$({{ port.config }}) += {{ port.module }}.o` means "build this when the option is on".
+      * **Kconfig:** the `config {{ port.symbol }}` entry makes the option appear in menuconfig, and lists what it depends on or selects.
+
+      Alternative for quick experiments: build it **out of tree** as a module (`make -C <kernel> M=$PWD`).
+      It's faster to iterate, but must be rebuilt for every kernel version.
+    do: |
+      Copy the file into `{{ port.dir }}/`, then add the two entries below.
+      Put the Kconfig entry near similar drivers in `{{ port.dir }}/Kconfig`, keeping alphabetical order.
+      {%- if driver_req and driver_req.selects %}
+      The `select` lines were derived from the helper APIs the driver calls.
+      {%- endif %}
+    file: "{{ port.dir }}/Kconfig"
+    snippet: |
+      # 1. copy the source
+      cp {{ port.src or ('<driver>.c') }} {{ port.dest }}
+
+      # 2. {{ port.dir }}/Makefile
+      obj-$({{ port.config }}) += {{ port.module }}.o
+
+      # 3. {{ port.dir }}/Kconfig
+      config {{ port.symbol }}
+      	tristate "{{ dev.name }} driver ({{ dev.compatible }})"
+      {%- if driver_req and driver_req.bus == 'i2c' %}
+      	depends on I2C
+      {%- elif driver_req and driver_req.bus == 'spi' %}
+      	depends on SPI
+      {%- endif %}
+      {%- for s in (driver_req.selects if driver_req else []) %}
+      	select {{ s }}
+      {%- endfor %}
+      	help
+      	  Driver for {{ dev.name }}. Brought in from {{ port.src or 'an external source' }}.
+    check: {type: kernel_text, file: "{{ port.dir }}/Makefile", pattern: 'obj-\$\({{ port.config }}\)\s*\+=\s*{{ port.module }}\.o'}
+
+  - id: driver_build
+    layer: driver
+    when: port.active
+    title: "Compile {{ port.module }}.o against your kernel"
+    why: |
+      Kernel-internal APIs change between versions, so a driver written for one kernel
+      often fails to compile on another. The fixes are usually small renames, and the
+      compiler error points right at them. Building just this one object takes seconds.
+      {%- if driver_req and driver_req.port_hints %}
+
+      Spotted in this driver's code:
+      {% for h in driver_req.port_hints %}
+      * {{ h }}
+      {%- endfor %}
+      {%- endif %}
+    do: |
+      Turn the option on first (`make menuconfig`, press `/`, search `{{ port.symbol }}`), then build just this file:
+      ```
+      make ARCH={{ soc.arch or 'arm64' }} CROSS_COMPILE=aarch64-linux-gnu- {{ port.object }}
+      ```
+      Then build the module and copy it to the board:
+      `make ... modules`, then `scp {{ port.dir }}/{{ port.module }}.ko` to the board, then `depmod -a` and `modprobe {{ port.module }}`.
+    command: "make ARCH={{ soc.arch or 'arm64' }} CROSS_COMPILE=aarch64-linux-gnu- {{ port.object }}"
+    check: {type: kernel_file, path: "{{ port.object }}"}
+
+  - id: driver_props
+    layer: node
+    when: driver_req and bus.needs_dt and dev.compatible
+    title: "Cross-check your node against what the driver reads"
+    why: |
+      Binding docs say what a node *should* have. The driver code shows what it
+      **actually asks for** at probe time. A missing supply or clock is the most
+      common reason for a silent `-EPROBE_DEFER` or "failed to get ..." in dmesg.
+      This check compares your node with the lookups found in
+      {{ (driver.file if driver and driver.file else port.src) or 'the driver' }}.
+    do: |
+      {%- if driver_req.supply %}
+      * supplies: {% for s in driver_req.supply %}`{{ s }}-supply`{% if not loop.last %}, {% endif %}{% endfor %}
+      {%- endif %}
+      {%- if driver_req.clock %}
+      * clocks: {{ driver_req.clock|join(', ') }}{% if driver_req.clock_hz %}, **must be {{ driver_req.clock_hz }} Hz**{% endif %}
+      {%- endif %}
+      {%- if driver_req.gpio %}
+      * gpios: {% for g in driver_req.gpio %}`{{ g }}-gpios`{% if g in driver_req.optional %} (optional){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+      {%- endif %}
+      {%- if driver_req.endpoint %}
+      * a `port { endpoint { ... } }` graph link{% if driver_req.lanes %} with `data-lanes` ({{ driver_req.lanes|join(' or ') }} lanes){% endif %}{% if driver_req.link_freq_values %} and `link-frequencies` = {{ driver_req.link_freq_values|join(' or ') }}{% endif %}
+      {%- endif %}
+      {%- if driver_req.property %}
+      * properties it reads (often optional, check the code for defaults): `{{ driver_req.property|join('`, `') }}`
+      {%- endif %}
+    check: {type: driver_props}

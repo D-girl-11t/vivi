@@ -5,6 +5,7 @@ import unittest
 
 from server.board import parse_scan
 from server.dts import DtsIndex, parse_file, strip_comments
+from server.kernel import driver_requirements
 
 SOC_DTSI = '''
 / {
@@ -54,6 +55,58 @@ class DtsTests(unittest.TestCase):
     def test_paths(self):
         pf = parse_file(os.path.join(self.d, 'dts/soc.dtsi'))
         self.assertEqual(pf.path_of(pf.nodes[-1]), '/soc/i2c@2000')
+
+
+CAM_BOARD = BOARD + '''
+&i2c1 {
+	old_cam: cam@3c {
+		compatible = "acme,oldcam";
+		port { old_ep: endpoint { remote-endpoint = <&csi_in>; }; };
+	};
+};
+'''
+
+DRIVER_C = r'''
+#define FOO_XCLK_FREQ		24000000
+#define FOO_LINK_FREQ		408000000
+static const s64 foo_link_freq_menu[] = { FOO_LINK_FREQ, };
+static const char * const foo_supply_name[] = { "VANA", "VDIG" };
+static int foo_probe(struct i2c_client *client)
+{
+	foo->xclk = devm_clk_get(dev, NULL);
+	if (clk_get_rate(foo->xclk) != FOO_XCLK_FREQ) return -EINVAL;
+	foo->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	foo->pwr = devm_gpiod_get(dev, "powerdown", GPIOD_OUT_HIGH);
+	device_property_read_u32(dev, "acme,mode", &mode);
+	if (v4l2_fwnode_endpoint_alloc_parse(ep, &cfg)) return -EINVAL;
+	if (cfg.bus.mipi_csi2.num_data_lanes != 2) return -EINVAL;
+}
+static const struct of_device_id foo_dt_ids[] = { { .compatible = "acme,foo" }, { } };
+static struct i2c_driver foo_driver = { .probe_new = foo_probe };
+'''
+
+
+class DriverTests(unittest.TestCase):
+    def test_requirements_from_source(self):
+        r = driver_requirements(DRIVER_C)
+        self.assertEqual(r['compatibles'], ['acme,foo'])
+        self.assertEqual(r['supply'], ['VANA', 'VDIG'])
+        self.assertEqual(r['gpio'], ['reset', 'powerdown'])
+        self.assertIn('reset', r['optional']); self.assertNotIn('powerdown', r['optional'])
+        self.assertEqual(r['property'], ['acme,mode'])
+        self.assertEqual((r['clock_hz'], r['link_freq_values'], r['lanes'], r['bus']), (24000000, [408000000], ['2'], 'i2c'))
+        self.assertTrue(r['endpoint'])
+        self.assertTrue(any('probe_new' in h for h in r['port_hints']))
+
+    def test_owners_finds_device_behind_endpoint(self):
+        d = tempfile.mkdtemp(); os.makedirs(os.path.join(d, 'dts'))
+        open(os.path.join(d, 'dts/soc.dtsi'), 'w').write(SOC_DTSI)
+        open(os.path.join(d, 'dts/board.dts'), 'w').write(CAM_BOARD)
+        ix = DtsIndex(d, 'dts/board.dts', 'dts')
+        own = ix.owners(r'remote-endpoint\s*=\s*<&csi_in>')
+        self.assertEqual([(o['label'], o['match_label']) for o in own], [('old_cam', 'old_ep')])
+        self.assertEqual(ix.owners(r'remote-endpoint\s*=\s*<&csi_in>', exclude_label='old_cam'), [])
+        self.assertIn('acme,oldcam', ix.node_body_for_compatible('acme,oldcam')['text'])
 
 
 class ScanTests(unittest.TestCase):

@@ -219,6 +219,94 @@ def c_board_cmd(ck, ctx, ws):
     return res
 
 
+def c_all_status(ck, ctx, ws):
+    if (e := _need_src(ws)):
+        return e
+    labels = [l for l in str(ck.get('labels') or '').split(',') if l]
+    if not labels:
+        return R('manual', 'no labels to check')
+    want = ck.get('expect', 'okay')
+    bad = [f"&{l} is {ws.dts.label_info(l)['status']}" for l in labels if ws.dts.label_info(l)['status'] != want]
+    return R('fail', '; '.join(bad)) if bad else R('pass', ', '.join('&' + l for l in labels) + f' {want}')
+
+
+# ------------------------------------------------------------- driver checks
+def c_driver_source(ck, ctx, ws):
+    port, compat = ctx['port'], ctx['dev'].get('compatible')
+    if port['state'] in ('ok', 'not_built'):
+        return R('pass', f"in the kernel tree: {ctx['driver']['file']}")
+    if not port['src']:
+        return R('fail', f'no driver for "{compat}" in your kernel tree. Set driver_src: in the form')
+    if not port['src_ok']:
+        return R('fail', f"driver_src {port['src']} not found")
+    if not port['src_compat_ok']:
+        return R('fail', f'{port["src"]} does not declare "{compat}"')
+    return R('pass', f"{port['src_path']} declares \"{compat}\"")
+
+
+def _kpath(ws, rel):
+    import os
+    if not ws.ktree:
+        return None
+    return os.path.join(ws.ktree.root, rel)
+
+
+def c_kernel_text(ck, ctx, ws):
+    p = _kpath(ws, ck['file'])
+    if not p:
+        return R('unknown', 'kernel_src not configured')
+    try:
+        text = open(p, errors='replace').read()
+    except OSError:
+        return R('fail', f"{ck['file']} not found in the kernel tree")
+    m = re.search(ck['pattern'], text, re.M)
+    if m:
+        return R('pass', f"{ck['file']}:{text.count(chr(10), 0, m.start()) + 1}: {m.group(0)}")
+    return R('fail', f"not in {ck['file']} yet")
+
+
+def c_kernel_file(ck, ctx, ws):
+    import os
+    p = _kpath(ws, ck['path'])
+    if not p:
+        return R('unknown', 'kernel_src not configured')
+    if os.path.exists(p):
+        return R('pass', f"{ck['path']} exists (built)")
+    return R('fail', f"{ck['path']} not built yet (or you build in a separate O= directory: then mark done)")
+
+
+def c_driver_props(ck, ctx, ws):
+    if (e := _need_src(ws)):
+        return e
+    req, compat = ctx['driver_req'], ctx['dev'].get('compatible')
+    nb = ws.dts.node_body_for_compatible(compat)
+    if not nb:
+        return R('fail', f'add the node with compatible "{compat}" first')
+    t, miss, ok = nb['text'], [], []
+
+    def need(cond, label, optional=False):
+        (ok if cond else (ok if optional else miss)).append(label if cond or not optional else label + ' (optional, absent)')
+    for s in req['supply']:
+        need(re.search(r'(?<![\w-])' + re.escape(s) + r'-supply\s*=', t), f'{s}-supply', s in req['optional'])
+    named = [c for c in req['clock'] if not c.startswith('(')]
+    if req['clock']:
+        need(re.search(r'\bclocks\s*=', t), 'clocks')
+    for c in named:
+        need(re.search(r'clock-names\s*=[^;]*"' + re.escape(c) + '"', t), f'clock-names "{c}"', c in req['optional'])
+    for g in req['gpio']:
+        need(re.search(r'(?<![\w-])' + re.escape(g) + r'-gpios?\s*=', t), f'{g}-gpios', g in req['optional'])
+    if req['endpoint']:
+        need(re.search(r'\bendpoint\b', t) and re.search(r'remote-endpoint\s*=', t), 'port/endpoint with remote-endpoint')
+        if req['lanes']:
+            need(re.search(r'data-lanes\s*=', t), 'data-lanes')
+        if req.get('link_frequencies'):
+            need(re.search(r'link-frequencies\s*=', t), 'link-frequencies')
+    where = f"{nb['file']}:{nb['line']}"
+    if miss:
+        return R('fail', f"node at {where} is missing: {', '.join(miss)}")
+    return R('pass', f"node at {where} has everything the driver looks up" + (f": {', '.join(ok)}" if ok else ''))
+
+
 def c_manual(ck, ctx, ws):
     return R('manual', ck.get('hint', 'mark it done when you have tried it'))
 
@@ -228,4 +316,6 @@ CHECKS = {
     'source_compatible': c_source_compatible, 'pins_muxed': c_pins_muxed, 'pads_free': c_pads_free,
     'kconfig': c_kconfig, 'dt_live': c_dt_live, 'probe': c_probe, 'scan': c_scan,
     'board_cmd': c_board_cmd, 'manual': c_manual,
+    'driver_source': c_driver_source, 'kernel_text': c_kernel_text, 'kernel_file': c_kernel_file,
+    'driver_props': c_driver_props, 'all_status': c_all_status,
 }

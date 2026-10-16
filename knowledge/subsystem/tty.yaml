@@ -1,6 +1,9 @@
 id: tty
 title: TTY (serial)
 summary: Serial ports, /dev/ttyXXX. Tools stty, picocom, minicom.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/tty/serial
+kconfig_prefix: 'SERIAL_'
 steps:
   - id: ttydev
     layer: subsystem

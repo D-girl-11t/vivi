@@ -9,9 +9,12 @@ import re
 import shlex
 import subprocess
 import traceback
+
+import yaml
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import ai
 from .board import sysfs_stream_cmd
 from .planner import Knowledge, PinResolver, plan
 from .workspace import PERIPHERAL_TEMPLATE, Workspace, safe_name
@@ -50,6 +53,7 @@ def status(q, body):
         'source': {'kernel': WS.ktree.root if WS.ktree else None,
                    'board_dts': WS.dts.rel(WS.dts.board_dts) if WS.dts else None,
                    'ok': bool(WS.dts and WS.dts.ok)},
+        'ai': ai.config(WS),
         'problems': [p for p in [
             None if soc else f"SoC profile '{WS.cfg.get('soc')}' not found in knowledge/soc/",
             None if WS.ktree else 'kernel_src not set or missing: source-side checks are disabled',
@@ -73,6 +77,140 @@ def put_config(q, body):
 def knowledge(q, body):
     KB.reload()
     return KB.catalog()
+
+
+@route('POST', '/api/config/fields')
+def put_config_fields(q, body):
+    allowed = {'soc', 'kernel_src', 'board_dts', 'board.transport', 'board.host', 'board.snapshot'}
+    WS.set_cfg_fields({k: v for k, v in body.items() if k in allowed and v is not None})
+    return {'ok': True}
+
+
+# ---------------------------------------------------------------- homepage
+@route('GET', '/api/overview')
+def overview(q, body):
+    """Everything the homepage shows: setup state, and each device's progress."""
+    KB.reload()
+    st = status(q, body)
+    items = []
+    for p in WS.peripherals():
+        it = dict(p)
+        if not p.get('error'):
+            try:
+                pl = plan(WS.periph_form(p['id']), KB, WS, WS.progress().get(p['id'], {}))
+                cur = next((s for s in pl['steps'] if s['id'] == pl['current']), None)
+                port = pl['summary'].get('port') or {}
+                it.update({'total': len(pl['steps']),
+                           'done': sum(s['result']['status'] == 'pass' for s in pl['steps']),
+                           'next': cur and {'title': cur['title'], 'layer': cur['layer']},
+                           'needs_driver': port.get('state') == 'missing' and not port.get('src_ok'),
+                           'problems': pl['problems']})
+            except Exception as e:   # one broken form must not break the homepage
+                it['error'] = f'{type(e).__name__}: {e}'
+        items.append(it)
+    cfg = WS.cfg
+    return {'status': st, 'items': items, 'ai': ai.config(WS),
+            'config': {'soc': cfg.get('soc'), 'kernel_src': cfg.get('kernel_src'), 'board_dts': cfg.get('board_dts'),
+                       'board': cfg.get('board') or {}},
+            'socs': [{'id': k, 'title': v.get('title'), 'status': v.get('status')} for k, v in KB.soc.items()],
+            'layers': KB.core['layers']}
+
+
+# ---------------------------------------------------------------- add-a-device wizard
+@route('GET', '/api/wizard/search')
+def wizard_search(q, body):
+    """Part name -> compatible strings in your kernel tree, with driver/binding status."""
+    if not (WS.ktree and WS.ktree.ok):
+        return {'items': [], 'note': 'kernel source not set, so nothing to search. You can still type the compatible string.'}
+    items = WS.ktree.search_compatibles(q.get('q', ''))
+    for it in items:
+        it.update(WS.ktree.guess_kind(it['binding'], it['driver']))
+    return {'items': items}
+
+
+@route('GET', '/api/wizard/check')
+def wizard_check(q, body):
+    """One compatible string -> what the guide will do with it."""
+    c = q.get('compatible', '').strip()
+    if not c:
+        return {}
+    if not (WS.ktree and WS.ktree.ok):
+        return {'compatible': c, 'state': 'unknown'}
+    binding = WS.ktree.binding(c)
+    driver = WS.ktree.driver(c)
+    from .kernel import driver_requirements
+    req = None
+    if driver:
+        with open(os.path.join(WS.ktree.root, driver['file']), errors='replace') as f:
+            req = driver_requirements(f.read())
+    guess = WS.ktree.guess_kind(binding and binding['file'], driver and driver['file'])
+    bus = (req or {}).get('bus')
+    if bus == 'i2c' and req and req.get('endpoint') and guess.get('subsystem') == 'v4l2':
+        bus = 'csi2'            # an I2C-controlled sensor with a video endpoint is a CSI camera
+    elif bus == 'platform' and guess.get('subsystem') == 'alsa':
+        bus = 'sai'             # codec without a control bus: only the I2S/SAI wires
+    return {'compatible': c, 'binding': binding and {k: binding[k] for k in ('file', 'title', 'required')},
+            'driver': driver and {k: driver.get(k) for k in ('file', 'name', 'config')},
+            'state': 'ok' if driver and driver.get('config') else ('not_built' if driver else 'missing'),
+            'guess': {'bus': bus if bus in KB.bus else None, 'subsystem': guess.get('subsystem')}}
+
+
+@route('POST', '/api/peripheral/create')
+def create_periph(q, body):
+    """Create a peripheral form from the wizard's answers (writes a commented YAML file)."""
+    pid = safe_name(body.get('id') or body.get('name') or 'new-device')
+    if os.path.exists(WS.periph_path(pid)):
+        raise ApiError(f'a device called {pid} already exists')
+    f = body.get('form') or {}
+
+    def parse(k, v):
+        # the wizard sends text; turn "0x1a", "2", "{reset: ...}" or "GPIO_IO16, GPIO_IO26" into YAML values
+        if not isinstance(v, str):
+            return v
+        v = v.strip()
+        if k == 'pins' and v and v[0] not in '[{':
+            return [x.strip() for x in v.split(',') if x.strip()]
+        if re.fullmatch(r'0[xX][0-9a-fA-F]+', v):
+            return v            # keep addresses in hex as typed
+        try:
+            out = yaml.safe_load(v)
+        except yaml.YAMLError:
+            return v
+        return out if isinstance(out, (int, float, list, dict)) else v
+    conn = {k: parse(k, v) for k, v in (f.get('connection') or {}).items() if v not in (None, '', [])}
+    doc = {'name': pid, 'description': f.get('description') or '', 'bus': f.get('bus'),
+           'subsystem': f.get('subsystem'), 'compatible': f.get('compatible')}
+    if f.get('driver_src'):
+        doc['driver_src'] = f['driver_src']
+    for k in ('format', 'codec_ref', 'card_name'):
+        if f.get(k):
+            doc[k] = parse(k, f[k])
+    doc['connection'] = conn
+    if f.get('goal'):
+        doc['goal'] = f['goal']
+    text = ('# Created by the "Add a device" wizard. Edit freely: the guide re-reads this file.\n'
+            '# Every field is explained in the form help (✎ Form in the workspace).\n'
+            + yaml.safe_dump(doc, sort_keys=False, default_flow_style=None, allow_unicode=True))
+    WS.save_periph(pid, text)
+    return {'id': pid}
+
+
+# ---------------------------------------------------------------- AI helper (optional)
+@route('POST', '/api/ask')
+def ask(q, body):
+    pid = body['id']
+    pl = plan(WS.periph_form(pid), KB, WS, WS.progress().get(pid, {}))
+    step = next((s for s in pl['steps'] if s['id'] == body.get('step')), None)
+    ctx = ai.build_context(WS, WS.periph_text(pid), pl, step)
+    question = (body.get('question') or '').strip() or 'Explain this step for a beginner, and what usually goes wrong here.'
+    if body.get('preview'):
+        return {'context': ctx}
+    try:
+        res = ai.ask(WS, ctx, question)
+    except RuntimeError as e:
+        raise ApiError(str(e))
+    res['context'] = ctx
+    return res
 
 
 # ---------------------------------------------------------------- board
@@ -268,7 +406,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, {'error': f'{type(e).__name__}: {e}'})
 
     def _static(self, path):
-        rel = 'index.html' if path in ('/', '') else path.lstrip('/').removeprefix('web/')
+        pages = {'/': 'home.html', '': 'home.html', '/app': 'index.html', '/app/': 'index.html'}
+        rel = pages.get(path) or path.lstrip('/').removeprefix('web/')
         p = os.path.realpath(os.path.join(WEB, rel))
         if not p.startswith(os.path.realpath(WEB)) or not os.path.isfile(p):
             return self._send(404, b'not found', 'text/plain')
@@ -319,6 +458,8 @@ def main():
         raise
     srv.daemon_threads = True
     print(f'Bring-up Studio on http://{a.host}:{a.port}  (workspace {WS.root})')
+    if ai.config(WS)['enabled']:
+        print(f"AI helper on ({ai.config(WS)['model']}); API key {'found' if ai.config(WS)['has_key'] else 'MISSING: set ANTHROPIC_API_KEY'}")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

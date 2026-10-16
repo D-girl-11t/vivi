@@ -8,7 +8,7 @@
 </head>
 <body>
 <header id="topbar">
-  <div class="brand">⚡ Bring-up Studio</div>
+  <a class="brand topnav" href="/" title="Home">⚡ Bring-up Studio</a>
   <div id="chips"></div>
   <div class="spacer"></div>
   <button id="btn-scan" title="Read the board's live state over ssh">⟳ Rescan board</button>
@@ -43,7 +43,7 @@
       <div id="view-body"><div class="empty">
         <h2>How to use this</h2>
         <ol>
-          <li>Pick a peripheral on the right (or create one with <b>＋</b>).</li>
+          <li>Pick a device on the right, or add one with <b>＋</b> (opens the guided wizard on the home page).</li>
           <li>The guide shows every bring-up layer. The <span class="pill cur">current</span> step is the first one that isn't green.</li>
           <li>Open a step: read <b>why</b>, click the file link, make the change in your editor, press <b>Check</b>.</li>
           <li>After deploying to the board, press <b>Rescan board</b> so board-side checks update.</li>

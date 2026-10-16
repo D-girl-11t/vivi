@@ -1,6 +1,9 @@
 id: alsa
 title: ALSA (audio)
 summary: Sound cards, PCM capture/playback. /dev/snd/*, tools arecord/aplay.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: sound/soc/codecs
+kconfig_prefix: 'SND_SOC_'
 live: {kind: audio}
 steps:
   - id: card

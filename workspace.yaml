@@ -15,3 +15,9 @@ board:
 editor: "code -g {path}:{line}"
 
 peripherals_dir: peripherals
+
+# Optional AI helper ("✦ Ask AI" on each step). Off by default; the guide itself never needs it.
+# The API key is read from the ANTHROPIC_API_KEY environment variable, never from this file.
+ai:
+  enabled: false
+  model: claude-sonnet-5-5

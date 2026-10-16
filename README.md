@@ -16,8 +16,13 @@ checks each step for you.
 ## Run
 
 ```sh
-./run.sh                 # → http://127.0.0.1:8765
+./run.sh                 # → http://127.0.0.1:8765  (home page)
 ```
+
+The **home page** shows setup state (SoC, kernel source, board), your devices with
+their progress, and **＋ Add a device**: a wizard that searches your kernel tree for the
+part's compatible string, tells you whether a driver exists, pre-fills bus and subsystem,
+and asks only for the wiring. The workspace (three panels) is at `/app`.
 
 Only needs `python3` with `pyyaml` and `jinja2` (Ubuntu ships both). No npm, no build step.
 
@@ -38,7 +43,8 @@ Only needs `python3` with `pyyaml` and `jinja2` (Ubuntu ships both). No npm, no 
 | 1 | hardware | Which pads? Free? Voltage? | pinfunc header + other users of the pad in source + live pinmux |
 | 2 | pinmux | Pads muxed to the right function? | mux macro present in the include chain |
 | 3 | controller | Bus controller `status = "okay"`? | effective status after all overrides |
-| 4 | node | Device described with the right `compatible`? | node present in source |
+| 4 | node | Device described with the right `compatible`? | node present in source, and it has every supply/clock/gpio/endpoint the **driver code** asks for |
+| 4b | driver | No driver in your kernel? Bring one in | `driver_src` found, Makefile/Kconfig hooks present, `.o` builds |
 | 5 | kconfig | Driver built? | compatible → driver .c → Makefile → `CONFIG_` → board's /proc/config.gz |
 | 6 | deploy | Is the new .dtb actually booted? | live /sys/firmware/devicetree |
 | 7 | probe | Driver bound? Deferred? | /sys/bus/*/devices/*/driver + devices_deferred + dmesg |
@@ -49,13 +55,43 @@ Only needs `python3` with `pyyaml` and `jinja2` (Ubuntu ships both). No npm, no 
 The **current** step is always the first one that isn't green. When something
 breaks, the first red step tells you which layer to debug.
 
+## When your kernel has no driver for the part
+
+Set `driver_src:` in the form (or in the wizard) to the driver's `.c` file, for example
+one from your vendor's BSP, the module maker's kernel fork, or a sibling driver you're adapting.
+The guide then adds a **Driver** layer: get the source, add the Makefile/Kconfig hooks
+(with `select`s derived from the APIs the driver calls), compile it against your kernel
+(with hints for known API changes between versions), then enable and probe it as usual.
+
+The tool also **reads the driver's C code** (`kernel.py: driver_requirements`) for the
+supplies, clocks (and required rate), GPIOs, graph endpoints, lane counts and link
+frequencies it looks up. Those values fill in the device-tree snippet, and the `driver_props`
+check compares your node against them. This works the same for in-tree and out-of-tree drivers.
+
+## Cameras (MIPI CSI-2)
+
+`bus: csi2` covers any CSI-2 sensor: the I2C control bus, the module's fixed clock and
+regulators, the sensor node with its endpoint, freeing a receiver input that another camera
+already uses, the receiver link, the capture engine, and the media pipeline.
+The SoC-specific node names and layout live in the SoC profile under `camera.styles`.
+NXP changed its layout between BSP releases, so the planner uses whichever one exists in your tree.
+
+## Optional AI helper
+
+Each step has **✦ Ask AI**. It's off by default; turn it on with `ai: {enabled: true}` in
+`workspace.yaml` and start with `ANTHROPIC_API_KEY=… ./run.sh` (the key is never written
+to disk). It sends the step plus the tool's evidence (form, snippet, check results, what the
+driver reads, matching dmesg lines, the board-file block) and shows you exactly what was sent.
+The guide itself never depends on it: steps and checks stay rule-based, so they're
+reproducible and can't make up properties.
+
 ## How it generalizes: three kinds of knowledge
 
 ```
 peripherals/<name>.yaml   ← you: ~10 lines from the schematic & datasheet
-knowledge/bus/*.yaml      ← how a device connects   (i2c, spi, gpio, sai, usb, uart)
+knowledge/bus/*.yaml      ← how a device connects   (i2c, spi, gpio, sai, usb, uart, csi2)
 knowledge/subsystem/*.yaml← how Linux exposes it    (alsa, v4l2, iio, input, counter, hwmon, tty, other)
-knowledge/soc/*.yaml      ← how this chip spells things (pinmux syntax, controller names, deploy)
+knowledge/soc/*.yaml      ← how this chip spells things (pinmux syntax, controller names, camera layout, deploy)
 knowledge/core.yaml       ← the shared ladder steps
 ```
 
@@ -72,7 +108,7 @@ driver's Makefile, and "how others do it" from other board files of the same SoC
 
 `source_text` · `source_status` · `source_compatible` · `pins_muxed` · `pads_free` ·
 `kconfig` · `dt_live` · `probe` · `scan` (regex on a scan section) · `board_cmd` (runs on
-Check) · `manual`
+Check) · `driver_source` · `driver_props` · `kernel_text` · `kernel_file` · `all_status` · `manual`
 
 ## Tests
 
@@ -88,9 +124,9 @@ that every source-side step then turns green.
 ## Layout
 
 ```
-server/  dts.py (DTS include-chain indexer) · kernel.py (binding/driver/Kconfig lookup)
-         board.py (ssh/local/snapshot + scan) · planner.py · checks.py · app.py (HTTP, stdlib)
-web/     index.html · app.js · style.css  (plain JS)
+server/  dts.py (DTS include-chain indexer) · kernel.py (binding/driver/Kconfig lookup, driver reader)
+         board.py (ssh/local/snapshot + scan) · planner.py · checks.py · ai.py (optional) · app.py (HTTP, stdlib)
+web/     home.html · home.js (home + wizard) · index.html · app.js (workspace) · style.css  (plain JS)
 tools/   make_demo_snapshot.py
 ```
 

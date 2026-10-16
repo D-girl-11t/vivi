@@ -27,6 +27,7 @@ connection:
 # properties: |       # extra DT properties copied into the node verbatim
 #   vdd-supply = <&reg_3v3>;
 # config: CONFIG_FOO  # override if the driver lookup can't find it
+# driver_src: drivers-extra/foo.c   # only if your kernel has no driver: the guide adds a Driver layer
 goal: what "working" means to you
 """
 
@@ -67,6 +68,36 @@ class Workspace:
         with open(self.cfg_path, 'w') as f:
             f.write(text)
         self.load()
+
+    def set_cfg_fields(self, fields: dict):
+        """Change a few settings from the setup form while keeping the file's comments.
+
+        Keys are top-level names or `board.<name>`; values are plain strings.
+        """
+        import re
+        text = open(self.cfg_path).read()
+        for key, val in fields.items():
+            if val is None:
+                continue
+            val = str(val).strip()
+            q = val if re.fullmatch(r'[\w./@:~+-]*', val) else '"' + val.replace('"', '\\"') + '"'
+            if key.startswith('board.'):
+                sub = key.split('.', 1)[1]
+                m = re.search(r'^board:[^\n]*\n((?:[ \t]+[^\n]*\n?)*)', text, re.M)
+                if not m:
+                    text = text.rstrip('\n') + f'\n\nboard:\n  {sub}: {q}\n'
+                    continue
+                block = m.group(1)
+                if re.search(rf'^[ \t]+{sub}:', block, re.M):
+                    block = re.sub(rf'^([ \t]+{sub}:)[ \t]*[^#\n]*?([ \t]+#[^\n]*)?$', lambda x: f'{x.group(1)} {q}' + (x.group(2) or ''), block, count=1, flags=re.M)
+                else:
+                    block = block.rstrip('\n') + f'\n  {sub}: {q}\n'
+                text = text[:m.start(1)] + block + text[m.end(1):]
+            elif re.search(rf'^{key}:', text, re.M):
+                text = re.sub(rf'^({key}:)[ \t]*[^#\n]*?([ \t]+#[^\n]*)?$', lambda x: f'{x.group(1)} {q}' + (x.group(2) or ''), text, count=1, flags=re.M)
+            else:
+                text = text.rstrip('\n') + f'\n{key}: {q}\n'
+        self.save_cfg_text(text)
 
     # ---------- board ----------
     @property

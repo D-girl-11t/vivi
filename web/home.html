@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bring-up Studio</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body class="home-body">
+<header id="topbar">
+  <div class="brand">⚡ Bring-up Studio</div>
+  <div class="spacer"></div>
+  <a class="btn" href="/app">Open workspace →</a>
+</header>
+
+<main class="home">
+  <section class="hero">
+    <h1>Bring up any peripheral on embedded Linux, one step at a time.</h1>
+    <p>Pick a device. The guide walks you through every layer, from the pins to your own app.
+      Each step says <b>why</b> it's needed, <b>which file</b> to change and <b>how to check</b> it,
+      using your own kernel source and your live board.</p>
+    <div class="hero-actions">
+      <button class="primary big" data-act="wizard">＋ Add a device</button>
+      <a class="btn big" href="/app">Open workspace</a>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">1</span> Setup</h2><span class="muted small">Point the tool at your sources and your board. You only do this once.</span></div>
+    <div id="setup-cards" class="setup-grid"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">2</span> Your devices</h2><span class="muted small">Click one to continue where you left off.</span></div>
+    <div id="devices" class="dev-grid"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">3</span> How a bring-up works</h2><span class="muted small">Every device climbs the same ladder. The guide only shows the steps your device needs.</span></div>
+    <ol id="ladder-strip" class="ladder-strip"></ol>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Rules vs. AI</h2></div>
+    <div class="two-col">
+      <div class="info">
+        <h3>The guide is rule-based on purpose</h3>
+        <p>Every step comes from templates in <code>knowledge/</code> and every ✓ comes from a real check
+          (your source, your kernel tree, your board), so it can't make up a property or a pin that doesn't exist.
+          It works offline, gives the same answer every time, and you can open the YAML to see <i>why</i> each step exists.</p>
+      </div>
+      <div class="info" id="ai-card"></div>
+    </div>
+  </section>
+</main>
+
+<!-- setup dialog -->
+<dialog id="dlg-setup" class="dlg">
+  <form method="dialog" id="setup-form">
+    <h2>Setup</h2>
+    <label>SoC profile <select name="soc"></select>
+      <span class="hint">Chip-specific knowledge: pin names, controller names, camera layout. Add one in <code>knowledge/soc/</code> for a new chip.</span></label>
+    <label>Kernel source tree <input name="kernel_src" placeholder="/home/you/linux-imx" autocomplete="off">
+      <span class="hint">The kernel your board runs. Yocto: <code>tmp/work-shared/&lt;machine&gt;/kernel-source</code>.
+        Otherwise clone your vendor's tree at the tag matching <code>uname -r</code> on the board.</span></label>
+    <label>Board device-tree file (inside that tree) <input name="board_dts" placeholder="arch/arm64/boot/dts/vendor/board.dts" autocomplete="off">
+      <span class="hint">On the board, <code>cat /proc/device-tree/model</code> tells you which board; in U-Boot, <code>printenv fdtfile</code> tells you which .dtb.</span></label>
+    <label>How to reach the board <select name="board.transport">
+        <option value="ssh">ssh: over the network (recommended)</option>
+        <option value="local">local: this tool runs on the board itself</option>
+        <option value="snapshot">snapshot: offline, from a saved scan</option></select></label>
+    <label class="ssh-only">SSH target <input name="board.host" placeholder="root@192.168.1.50" autocomplete="off">
+      <span class="hint">Set up key login once: <code>ssh-copy-id root@&lt;ip&gt;</code>. Find the IP on the serial console with <code>ip addr</code>.</span></label>
+    <div class="dlg-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="setup-save" value="default">Save</button></div>
+  </form>
+</dialog>
+
+<!-- add-a-device wizard -->
+<dialog id="dlg-wizard" class="dlg wide">
+  <div class="wiz-steps" id="wiz-steps"></div>
+  <div id="wiz-body"></div>
+  <div class="dlg-actions"><button id="wiz-back">← Back</button><span class="spacer"></span>
+    <button id="wiz-cancel">Cancel</button><button class="primary" id="wiz-next">Next →</button></div>
+</dialog>
+
+<div id="toast"></div>
+<script src="/web/home.js"></script>
+</body>
+</html>

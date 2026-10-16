@@ -1,6 +1,9 @@
 id: hwmon
 title: hwmon
 summary: Hardware monitoring for temperature, voltage, fan and power. /sys/class/hwmon, tool sensors.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/hwmon
+kconfig_prefix: 'SENSORS_'
 live: {kind: sysfs, hint: "/sys/class/hwmon/hwmon0/temp1_input"}
 steps:
   - id: hwmondev

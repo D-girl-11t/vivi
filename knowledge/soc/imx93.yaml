@@ -38,6 +38,7 @@ controllers:
   sai:  { label: 'sai{n}',    function_prefix: 'SAI{n}_' }
   usb:  { label: 'usbotg{n}' }
   gpio: { label: 'gpio{n}',   function_prefix: 'GPIO' }
+  csi2: { label: 'lpi2c{n}',  function_prefix: 'LPI2C{n}_' }   # a CSI camera's control bus is I2C
 
 # ---------------------------------------------------------------- snippets
 # Jinja templates rendered with the planner context (dev, pins, ctrl, ...).
@@ -63,8 +64,102 @@ snippets:
       fsl,sai-mclk-direction-output;
     i2c: |
       clock-frequency = <{{ dev.connection.bus_hz | default(100000) }}>;
+    csi2: |
+      clock-frequency = <{{ dev.connection.bus_hz | default(400000) }}>;
     usb: |
       dr_mode = "host";
+
+# ---------------------------------------------------------------- camera (MIPI CSI-2)
+# Pipeline: sensor -> MIPI CSI-2 receiver (+ D-PHY) -> ISI capture -> /dev/videoN.
+# NXP changed the camera DT layout between BSP releases. The planner uses the first
+# style whose `detect` label exists in your tree. Mainline (as of 7.3) has no i.MX93 camera nodes.
+camera:
+  max_lanes: 2
+  bsp_hint: "NXP linux-imx, github.com/nxp-imx/linux-imx, matching your Yocto release"
+  notes: |
+    **No ISP on the i.MX93.** The ISI can scale and convert YUV/RGB, but it can't
+    demosaic raw Bayer. A raw sensor gives you raw frames (RAW10/RAW8): fine for
+    capture and machine vision, but for normal colour images you debayer in software
+    (libcamera's software ISP, GStreamer `bayer2rgb`, or OpenCV `cvtColor`) or use a
+    module with an on-board ISP (sensors that output YUV, or bridges like the AP1302).
+  styles:
+    - id: nxp-6.12
+      title: "NXP lf-6.12 (ports, ISI with endpoint)"
+      detect: isi
+      csi: mipi_csi
+      csi_in: mipi_csi_in
+      isi: isi
+      lanes: "{{ dev.lane_list }}"          # data-lanes lists the lanes: <1 2>
+      receiver: |
+        &mipi_csi {
+        	status = "okay";
+
+        	ports {
+        		#address-cells = <1>;
+        		#size-cells = <0>;
+
+        		port@0 {
+        			reg = <0>;
+
+        			mipi_csi_in: endpoint {
+        				remote-endpoint = <&{{ dev.label }}_ep>;
+        				data-lanes = <{{ dev.lane_list }}>;
+        				clock-lanes = <0>;
+        			};
+        		};
+
+        		port@1 {
+        			reg = <1>;
+
+        			mipi_csi_out: endpoint {
+        				remote-endpoint = <&isi_in>;
+        			};
+        		};
+        	};
+        };
+
+        &dphy_rx {
+        	status = "okay";
+        };
+      capture: |
+        &isi {
+        	status = "okay";
+
+        	port {
+        		isi_in: endpoint {
+        			remote-endpoint = <&mipi_csi_out>;
+        		};
+        	};
+        };
+    - id: nxp-6.6
+      title: "NXP lf-6.6 (single port, ISI cap_device)"
+      detect: isi_0
+      csi: mipi_csi
+      csi_in: mipi_csi_ep
+      isi: isi_0
+      lanes: "{{ dev.lanes }}"              # this NXP driver reads data-lanes as a lane COUNT: <2>
+      receiver: |
+        &mipi_csi {
+        	status = "okay";
+
+        	port {
+        		mipi_csi_ep: endpoint {
+        			remote-endpoint = <&{{ dev.label }}_ep>;
+        			data-lanes = <{{ dev.lanes }}>;
+        			cfg-clk-range = <28>;
+        			hs-clk-range = <0x2b>;
+        			bus-type = <4>;
+        		};
+        	};
+        };
+      capture: |
+        &isi_0 {
+        	status = "okay";
+
+        	cap_device {
+        		status = "okay";
+        	};
+        };
 
 # ---------------------------------------------------------------- real-time offload
 coprocessor:

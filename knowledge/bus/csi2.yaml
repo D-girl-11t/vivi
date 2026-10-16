@@ -1,0 +1,204 @@
+id: csi2
+title: MIPI CSI-2 camera
+summary: Camera sensor with high-speed CSI-2 data lanes plus an I2C control bus. Sensors (IMX, OV, AR...), video bridges, ISPs.
+needs_dt: true
+pin_role: i2c            # the only SoC pads a CSI camera uses are its I2C control lines (and maybe reset)
+# The SoC-specific parts (receiver and capture node names and layout) come from soc.camera.styles.
+# The planner checks which camera nodes already point at the receiver input, so it
+# can tell you to switch off a camera that's already wired there.
+context_searches:
+  csi_users: 'remote-endpoint\s*=\s*<&{{ cam.csi_in }}>'
+form_help:
+  controller: "I2C instance the sensor's SCL/SDA go to (lpi2c3 -> 3). Check the camera connector on the schematic"
+  reg: "sensor I2C address from its datasheet (7-bit), e.g. 0x1a or 0x10"
+  lanes: "data lanes wired on the connector (1, 2 or 4); the SoC receiver may support fewer"
+  link_frequency: "CSI link frequency in Hz. Leave empty to take it from the driver's link_freq table"
+  clock_hz: "frequency of the module's own crystal, e.g. 24000000. Leave empty to take it from the driver"
+  clock: "only if the SoC feeds the sensor clock instead, e.g. <&clk IMX93_CLK_24M>"
+  supplies: "only if rails come from board regulators, e.g. {VANA: '&reg_2v8'}. Leave empty for the module's own"
+  gpios: "reset/powerdown lines, e.g. {reset: '<&gpio2 7 GPIO_ACTIVE_LOW>'}"
+steps:
+  - use: pinmux
+  - use: controller
+    title: "Enable the sensor's control bus &{{ ctrl.label }}"
+
+  - id: cam_power
+    layer: node
+    when: (dev.supplies_list and not dev.supplies) or (dev.clock_hz and not dev.connection.clock)
+    title: "Describe the clock and power the sensor needs"
+    why: |
+      Sensor drivers switch their clock and power rails on and off themselves, so the
+      device tree must say where they come from. Most plug-in camera **modules** make their own
+      rails and crystal clock on board. You still describe them as always-on fixed
+      regulators and a fixed clock, because the driver asks for them by name and **won't probe
+      without them**.
+      {%- if driver_req and driver_req.clock_hz %} The driver also checks that the clock is exactly **{{ driver_req.clock_hz }} Hz**.{% endif %}
+    do: |
+      Put these in the root `/ { ... }` block. If a rail actually comes from a board regulator,
+      set `supplies:` in the form instead and that rail won't be generated.
+    file: board
+    anchor: "/"
+    snippet: |
+      {%- if dev.clock_hz and not dev.connection.clock %}
+      {{ dev.label }}_xclk: {{ dev.slug }}-xclk {
+      	compatible = "fixed-clock";
+      	#clock-cells = <0>;
+      	clock-frequency = <{{ dev.clock_hz }}>;
+      };
+      {%- endif %}
+      {%- for s in dev.supplies_list if not dev.supplies %}
+
+      {{ dev.label }}_{{ s|lower }}: {{ dev.slug }}-{{ s|lower }} {
+      	compatible = "regulator-fixed";
+      	regulator-name = "{{ dev.slug }}-{{ s|lower }}";
+      	regulator-always-on;
+      };
+      {%- endfor %}
+    check: {type: source_text, pattern: '{{ dev.label }}_(?:xclk|{{ (dev.supplies_list[0]|lower) if dev.supplies_list else "xclk" }})\s*:'}
+
+  - id: sensor
+    layer: node
+    title: "Describe {{ dev.name }} at {{ dev.reg_hex }} on &{{ ctrl.label }}"
+    why: |
+      The sensor node does two jobs. The I2C part (`reg`) lets the driver talk to the
+      sensor's registers. The **graph** part (`port`/`endpoint`) describes the video
+      cable: the sensor's endpoint and the receiver's endpoint point at each other with
+      `remote-endpoint`, and both sides agree on `data-lanes` and `link-frequencies`.
+      The media framework follows these links to build the pipeline
+      sensor → CSI-2 receiver → capture.
+      {%- if soc.camera.max_lanes and dev.lanes|int > soc.camera.max_lanes %}
+
+      ⚠ You set {{ dev.lanes }} lanes, but this SoC's receiver takes at most {{ soc.camera.max_lanes }}. Use {{ soc.camera.max_lanes }}, and make sure the driver supports that{% if driver_req and driver_req.lanes %} (it accepts {{ driver_req.lanes|join(' or ') }}){% endif %}.
+      {%- endif %}
+      {%- if binding %} Binding: `{{ binding.file }}`.{% endif %}
+    do: |
+      Put this child node **inside** `&{{ ctrl.label }} { ... }`.
+      {%- if not dev.link_freq %}
+      ⚠ No link frequency known: set `link_frequency:` in the form (the value is in the driver's link_freq table or the module's documentation).
+      {%- endif %}
+      Before blaming the driver, check the sensor answers on the bus: `i2cdetect -y -r <bus>` should show {{ dev.reg_hex }}
+      (some modules only power the sensor once the reset line is released).
+    file: board
+    anchor: "&{{ ctrl.label }}"
+    snippet: |
+      {{ dev.label }}: {{ dev.node_name }}@{{ dev.reg_hex[2:] }} {
+      	compatible = "{{ dev.compatible }}";
+      	reg = <{{ dev.reg_hex }}>;
+      	clocks = {{ dev.connection.clock or ('<&' ~ dev.label ~ '_xclk>') }};
+      {%- for s in dev.supplies_list %}
+      	{{ s }}-supply = <{{ (dev.supplies or {}).get(s) or ('&' ~ dev.label ~ '_' ~ s|lower) }}>;
+      {%- endfor %}
+      {%- for g, spec in (dev.gpios or {}).items() %}
+      	{{ g }}-gpios = {{ spec }};
+      {%- endfor %}
+      {{ dev.properties | tabs(1) }}
+
+      	port {
+      		{{ dev.label }}_ep: endpoint {
+      			remote-endpoint = <&{{ cam.csi_in or 'csi_in' }}>;
+      			data-lanes = <{{ dev.lane_list }}>;
+      			link-frequencies = /bits/ 64 <{{ dev.link_freq or 0 }}>;
+      		};
+      	};
+      };
+    examples: {compatible: "{{ dev.compatible }}"}
+    check: {type: source_compatible, compatible: "{{ dev.compatible }}"}
+
+  - id: csi_free
+    layer: node
+    when: found.csi_users
+    title: "Unplug the camera that's already wired to the CSI input"
+    why: |
+      A CSI-2 receiver input takes **one** sensor. Your board file already links
+      {% for u in found.csi_users %}**{{ u.label or u.name }}** ({{ u.file }}:{{ u.line }}, status {{ u.status }}){% if not loop.last %}, {% endif %}{% endfor %}
+      to `&{{ cam.csi_in }}`. If it stays enabled, its driver will also try to claim the receiver, and the
+      graph would have two sensors pointing at one input.
+    do: |
+      Disable it in the board file (don't delete it, so you can switch back later). If it sits behind an
+      I2C mux or IO expander that only it uses, you can leave those alone.
+    file: board
+    anchor: "&{{ found.csi_users[0].label }}"
+    snippet: |
+      {%- for u in found.csi_users if u.label %}
+      &{{ u.label }} {
+      	status = "disabled";
+      };
+      {%- if u.match_label %}
+
+      /* also cut its end of the old video link, so the graph stays two-way */
+      &{{ u.match_label }} {
+      	/delete-property/ remote-endpoint;
+      };
+      {%- endif %}
+      {%- endfor %}
+    check: {type: all_status, labels: "{{ found.csi_users|map(attribute='label')|select|join(',') }}", expect: disabled}
+
+  - id: csi_receiver
+    layer: node
+    title: "Point the CSI-2 receiver{% if cam.csi %} &{{ cam.csi }}{% endif %} at {{ dev.name }}"
+    why: |
+      This is the other half of the video cable. The receiver's input endpoint must point back at
+      `&{{ dev.label }}_ep` with the same `data-lanes`. The receiver doesn't care which sensor it is;
+      it only needs the lanes and the link.
+      {%- if not cam.found %}
+
+      ⚠ {% if soc.camera %}Neither {% for st in soc.camera.styles %}`&{{ st.detect }}`{% if not loop.last %} nor {% endif %}{% endfor %} exists in your kernel tree, so it has **no camera nodes for this SoC**. Mainline often lags vendor BSPs here: point `kernel_src` at your SoC vendor's kernel{% if soc.camera.bsp_hint %} ({{ soc.camera.bsp_hint }}){% endif %}.{% else %}The SoC profile `{{ soc.id }}` has no `camera:` section yet. Add one: it names the receiver and capture nodes for this SoC.{% endif %}
+      {%- else %}
+
+      Your tree uses the **{{ cam.title }}** camera layout (detected because `&{{ cam.detect }}` exists).
+      {%- endif %}
+    do: |
+      {%- if has_label(cam.csi_in) %}
+      The board already has the endpoint `&{{ cam.csi_in }}`, so override just the link (a top-level `&label { }` edits that node in place).
+      {%- else %}
+      Add this block at the top level of the board file.
+      {%- endif %}
+      Compare with **examples from other boards** to see this SoC's receiver tuning properties.
+    file: board
+    anchor: "&{{ cam.csi_in if has_label(cam.csi_in) else (cam.csi or 'csi') }}"
+    snippet: |
+      {%- if has_label(cam.csi_in) %}
+      &{{ cam.csi_in }} {
+      	remote-endpoint = <&{{ dev.label }}_ep>;
+      	data-lanes = <{{ cam.lanes or dev.lane_list }}>;
+      };
+      {%- else %}
+      {{ cam.receiver }}
+      {%- endif %}
+    examples: {label: "{{ cam.csi or '' }}"}
+    check: {type: source_text, pattern: 'remote-endpoint\s*=\s*<&{{ dev.label }}_ep>'}
+
+  - id: capture
+    layer: node
+    when: cam.isi
+    title: "Enable the capture engine &{{ cam.isi }}"
+    why: |
+      The CSI-2 receiver only unpacks the serial stream. A separate **capture** block (on this SoC
+      `&{{ cam.isi }}`) writes the frames into memory and creates /dev/videoN. It has to be
+      enabled and linked to the receiver's output.
+    do: Add or extend this block at the top level of the board file.
+    file: board
+    anchor: "&{{ cam.isi }}"
+    snippet: "{{ cam.capture }}"
+    examples: {label: "{{ cam.isi }}"}
+    check: {type: source_status, label: "{{ cam.isi }}", expect: okay}
+
+  - id: pipeline
+    layer: subsystem
+    title: "Media pipeline: sensor → receiver → capture"
+    why: |
+      Camera drivers register with the **media controller**, so the pipeline is a graph you can print.
+      If the sensor entity is missing, its driver didn't probe. If links are missing, an endpoint
+      doesn't match. Many pipelines also need formats set on each pad before streaming.
+      {%- if soc.camera.notes %}
+
+      {{ soc.camera.notes }}
+      {%- endif %}
+    do: |
+      ```
+      media-ctl -p
+      v4l2-ctl --list-devices
+      ```
+      Find `{{ driver.name if driver else dev.node_name }}` among the entities and check it links to the receiver.
+    command: media-ctl -p
+    check: {type: board_cmd, cmd: "media-ctl -p", expect: "{{ driver.name if driver else dev.node_name }}"}

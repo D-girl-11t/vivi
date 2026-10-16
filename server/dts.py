@@ -284,6 +284,44 @@ class DtsIndex:
     def find_compatible(self, compat: str) -> list[dict]:
         return self.search(r'compatible\s*=[^;]*"' + re.escape(compat) + '"')
 
+    def node_body_for_compatible(self, compat: str) -> dict | None:
+        """Comment-free body (children included) of the node that carries this compatible."""
+        rx = re.compile(r'compatible\s*=[^;]*"' + re.escape(compat) + '"')
+        for pf in self.files:
+            for m in rx.finditer(pf.clean):
+                nd = None
+                for n in pf.nodes:
+                    if n.open <= m.start() <= n.end and (nd is None or n.open > nd.open):
+                        nd = n
+                if nd:
+                    return {'file': self.rel(pf.path), 'line': nd.line, 'text': pf.clean[nd.start:nd.end + 1]}
+        return None
+
+    def owners(self, pattern: str, exclude_label: str = '') -> list[dict]:
+        """Devices (nearest ancestor node with a `compatible`) whose body matches pattern."""
+        rx, out, seen = re.compile(pattern), [], set()
+        for pf in self.files:
+            for m in rx.finditer(pf.clean):
+                chain = sorted((n for n in pf.nodes if n.open <= m.start() <= n.end), key=lambda n: n.open)
+                if any(exclude_label and exclude_label in n.labels for n in chain):
+                    continue
+                dev = next((n for n in reversed(chain) if re.search(r'\bcompatible\s*=', pf.own_props(n))), None) \
+                    or (chain[-1] if chain else None)
+                if not dev or (pf.path, dev.start) in seen:
+                    continue
+                seen.add((pf.path, dev.start))
+                st = STATUS_RE.search(pf.own_props(dev))
+                label = dev.labels[0] if dev.labels else dev.ref
+                if label and not st:
+                    st_eff = self.label_info(label)['status']
+                else:
+                    st_eff = st.group(1) if st else 'okay'
+                inner = next((n for n in reversed(chain) if n.labels), None)
+                out.append({'label': label, 'name': dev.name, 'file': self.rel(pf.path),
+                            'line': pf.line_of(m.start()), 'status': st_eff,
+                            'match_label': inner.labels[0] if inner is not None and inner is not dev else None})
+        return out
+
     def _enclosing_name(self, pf: ParsedFile, off: int) -> str | None:
         best = None
         for nd in pf.nodes:

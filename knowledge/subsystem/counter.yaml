@@ -1,6 +1,9 @@
 id: counter
 title: Counter
 summary: Generic counter subsystem for pulse counters and quadrature decoders. /sys/bus/counter/devices.
+# where a driver you bring in goes, and how its Kconfig symbol is usually named
+driver_dir: drivers/counter
+kconfig_prefix: ''
 live: {kind: sysfs, hint: "/sys/bus/counter/devices/counter0/count0/count"}
 steps:
   - id: counterdev

@@ -16,7 +16,9 @@ import re
 import jinja2
 import yaml
 
-LAYER_ORDER = ['hardware', 'pinmux', 'controller', 'node', 'kconfig', 'deploy',
+from .kernel import driver_requirements
+
+LAYER_ORDER = ['hardware', 'pinmux', 'controller', 'node', 'driver', 'kconfig', 'deploy',
                'probe', 'subsystem', 'userspace', 'app']
 _EMPTY = '\x00'   # marker so empty substitutions don't leave blank lines in snippets
 
@@ -205,6 +207,10 @@ def build_context(form: dict, kb: Knowledge, soc: dict, ws) -> dict:
     # ---- kernel knowledge
     binding = ktree.binding(compat) if (ktree and ktree.ok and compat) else None
     driver = ktree.driver(compat, form.get('bus', '')) if (ktree and ktree.ok and compat) else None
+    sub = kb.subsystem.get(form.get('subsystem') or 'other', {})
+    port = driver_port_info(form, driver, compat, sub, ws)
+    if not driver and port['src_ok']:
+        driver = {'name': port['module'], 'config': port['config'], 'file': None, 'external': True}
     if not driver and form.get('driver'):
         driver = {'name': form['driver'], 'config': None}
 
@@ -223,6 +229,8 @@ def build_context(form: dict, kb: Knowledge, soc: dict, ws) -> dict:
     extra = form.get('config') or []
     for sym in ([extra] if isinstance(extra, str) else extra):
         add_k(sym, 'set in form')
+    if port['active'] and port['config']:
+        add_k(port['config'], 'the driver you are adding')
     if driver and driver.get('config'):
         add_k(driver['config'], f'"{compat}"', driver)
     if ktree and ktree.ok:
@@ -239,9 +247,41 @@ def build_context(form: dict, kb: Knowledge, soc: dict, ws) -> dict:
         files['dtb_target'] = os.path.splitext(rel)[0] + '.dtb'
         files['dtb_out'] = os.path.join(arch_dts, files['dtb_target'])
 
+    # what the driver code reads from the DT (in-tree file, or the one you brought in)
+    drv_text = None
+    if driver and driver.get('file') and ktree:
+        with open(os.path.join(ktree.root, driver['file']), errors='replace') as f:
+            drv_text = f.read()
+    elif port['src_ok']:
+        with open(port['src_path'], errors='replace') as f:
+            drv_text = f.read()
+    driver_req = driver_requirements(drv_text) if drv_text else None
+
+    # values a template may need, taken from the form first and the driver code second
+    def pick(*vals):
+        return next((v for v in vals if v not in (None, '', [], {})), None)
+    req = driver_req or {}
+    dev['supplies'] = pick(conn.get('supplies'), form.get('supplies')) or {}
+    dev['supplies_list'] = list(dev['supplies']) or req.get('supply') or \
+        [p[:-len('-supply')] for p in (binding or {}).get('required', []) if p.endswith('-supply')]
+    dev['gpios'] = pick(conn.get('gpios'), form.get('gpios')) or {}
+    dev['clock_hz'] = pick(conn.get('clock_hz'), req.get('clock_hz'))
+    lanes = int(pick(conn.get('lanes'), (req.get('lanes') or [None])[0], 2))
+    dev['lanes'], dev['lane_list'] = lanes, ' '.join(str(i) for i in range(1, lanes + 1))
+    dev['link_freq'] = pick(conn.get('link_frequency'), (req.get('link_freq_values') or [None])[0])
+
+    has_label = (lambda l: bool(l) and dts.label_info(l)['exists']) if (dts and dts.ok) else (lambda l: False)
     ctx = {'dev': dev, 'bus': bus, 'ctrl': ctrl, 'pins': pins, 'irq': irq, 'gpio_ctrls': gpio_ctrls,
            'soc': soc, 'binding': binding, 'driver': driver, 'kconfig': kconfig, 'files': files,
-           'board': ws.cfg.get('board', {}), 'anchor': {}}
+           'board': ws.cfg.get('board', {}), 'anchor': {}, 'port': port, 'driver_req': driver_req,
+           'has_label': has_label}
+    ctx['cam'] = camera_style(soc, has_label)
+    ctx['cam'] = render(ctx['cam'], ctx)
+    # bus templates can ask for extra source searches, e.g. "who else uses the CSI input?"
+    ctx['found'] = {}
+    for key, rx in (bus.get('context_searches') or {}).items():
+        rx = render(rx, ctx)
+        ctx['found'][key] = dts.owners(rx, exclude_label=dev['label']) if (dts and dts.ok and rx) else []
     sn = soc.get('snippets', {})
     ctx['snip'] = {
         'pinctrl_group': render(sn.get('pinctrl_group', ''), ctx) if pins else '',
@@ -250,6 +290,60 @@ def build_context(form: dict, kb: Knowledge, soc: dict, ws) -> dict:
     }
     ctx['deploy'] = render(soc.get('deploy', {}), ctx)
     return ctx
+
+
+def _resolve_path(p: str, *bases: str) -> str:
+    p = os.path.expanduser(str(p))
+    if os.path.isabs(p):
+        return p
+    for b in bases:
+        if b and os.path.exists(os.path.join(b, p)):
+            return os.path.join(b, p)
+    return os.path.join(bases[0], p) if bases and bases[0] else p
+
+
+def driver_port_info(form: dict, driver: dict | None, compat: str, sub: dict, ws) -> dict:
+    """Is the driver in the kernel tree? If not, where will it come from and where should it go?"""
+    ktree = ws.ktree
+    src = form.get('driver_src')
+    src_path = _resolve_path(src, ws.root, ktree.root if ktree else None) if src else None
+    src_ok = bool(src_path and os.path.isfile(src_path))
+    module = os.path.splitext(os.path.basename(src_path))[0] if src_path else \
+        (driver or {}).get('name') or (compat.split(',')[-1] if compat else 'mydriver')
+    module = re.sub(r'[^A-Za-z0-9_]', '_', module)
+    if driver and driver.get('file'):
+        state = 'ok' if driver.get('config') else 'not_built'
+    elif not (ktree and ktree.ok and compat):
+        state = 'unknown'
+    else:
+        state = 'missing'
+    cfg = form.get('config') if isinstance(form.get('config'), str) else None
+    if not cfg and driver and driver.get('config'):
+        cfg = driver['config']
+    if not cfg:
+        cfg = 'CONFIG_' + sub.get('kconfig_prefix', '') + module.upper()
+    ddir = form.get('driver_dir') or (os.path.dirname(driver['file']) if driver and driver.get('file') else None) \
+        or sub.get('driver_dir') or 'drivers/misc'
+    src_text = ''
+    if src_ok:
+        with open(src_path, errors='replace') as f:
+            src_text = f.read()
+    return {
+        'state': state, 'active': bool(src) or state in ('missing', 'not_built'),
+        'src': src, 'src_path': src_path, 'src_ok': src_ok,
+        'src_compat_ok': (not compat) or (f'"{compat}"' in src_text),
+        'module': module, 'config': cfg, 'symbol': cfg.removeprefix('CONFIG_'),
+        'dir': ddir, 'dest': f'{ddir}/{module}.c', 'object': f'{ddir}/{module}.o',
+    }
+
+
+def camera_style(soc: dict, has_label) -> dict:
+    """SoC vendors change their camera DT layout between BSP releases; use whichever this tree has."""
+    styles = (soc.get('camera') or {}).get('styles') or []
+    for st in styles:
+        if has_label(st.get('detect')):
+            return dict(st, found=True)
+    return dict(styles[0], found=False) if styles else {'found': False}
 
 
 def step_templates(form: dict, kb: Knowledge) -> list[dict]:
@@ -263,6 +357,7 @@ def step_templates(form: dict, kb: Knowledge) -> list[dict]:
             out.append(base)
         else:
             out.append(s)
+    out += kb.core.get('driver_port', [])
     out += kb.core.get('after_bus', [])
     out += [dict(s, id='sub_' + s['id']) for s in sub.get('steps', [])]
     return out
@@ -328,6 +423,7 @@ def plan(form: dict, kb: Knowledge, ws, manual: dict, live_step: str | None = No
         'summary': {
             'label': ctx['dev']['label'], 'controller': ctx['ctrl'], 'pins': ctx['pins'],
             'binding': ctx['binding'], 'driver': ctx['driver'], 'kconfig': ctx['kconfig'],
+            'driver_req': ctx['driver_req'], 'port': ctx['port'],
             'live': (kb.subsystem.get(form.get('subsystem') or '', {}) or {}).get('live'),
         },
     }

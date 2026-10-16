@@ -199,12 +199,14 @@ async function loadPeripherals(select) {
   const r = await api('/api/peripherals'); S.periphs = r.items;
   const sel = $('#periph-select');
   sel.innerHTML = S.periphs.map(p => `<option value="${esc(p.id)}">${esc(p.name)}  ·  ${esc(p.bus || '?')} → ${esc(p.subsystem || '?')}</option>`).join('') || '<option value="">no peripherals yet, press ＋</option>';
-  S.pid = select || localStorage.getItem('bs.pid') || S.periphs[0]?.id;
+  const fromUrl = new URLSearchParams(location.search).get('p');
+  S.pid = select || fromUrl || (() => { try { return localStorage.getItem('bs.pid'); } catch { return null; } })() || S.periphs[0]?.id;
   if (!S.periphs.some(p => p.id === S.pid)) S.pid = S.periphs[0]?.id;
   if (S.pid) sel.value = S.pid;
   if (S.pid) await loadPlan();
 }
-$('#periph-select').addEventListener('change', e => { S.pid = e.target.value; S.open.clear(); try { localStorage.setItem('bs.pid', S.pid); } catch { } guard(loadPlan); });
+$('#periph-select').addEventListener('change', e => { S.pid = e.target.value; S.open.clear(); try { localStorage.setItem('bs.pid', S.pid); } catch { }
+  history.replaceState(null, '', '/app?p=' + encodeURIComponent(S.pid)); guard(loadPlan); });
 
 async function loadPlan(liveStep) {
   if (!S.pid) return;
@@ -245,6 +247,7 @@ function stepHtml(s, i) {
     b += `<div class="result ${r.status}"><b>${ICON[r.status]} ${r.status}</b> ${esc(r.detail)}</div>`;
     b += `<div class="actions"><button class="primary" data-check="${esc(s.id)}">Check</button>`;
     if (s.examples) b += `<button data-examples="${esc(s.id)}">Examples from other boards</button>`;
+    b += `<button data-ask="${esc(s.id)}" title="${S.ai?.enabled ? 'Ask Claude about this step, with the evidence attached' : 'Optional AI helper: see the home page to turn it on'}">✦ Ask AI</button>`;
     b += r.status === 'pass' && /marked done/.test(r.detail) ? `<button data-manual="${esc(s.id)}" data-done="">Undo done</button>`
       : r.status !== 'pass' ? `<button data-manual="${esc(s.id)}" data-done="1">Mark done</button>` : '';
     b += `</div></div>`;
@@ -270,6 +273,8 @@ $('#right').addEventListener('click', e => {
   if (ck) { guard(async () => { ck.disabled = true; ck.textContent = 'checking…'; await api('/api/source/reload', { method: 'POST' }); await loadPlan(ck.dataset.check); const s = S.plan.steps.find(x => x.id === ck.dataset.check); toast(`${ICON[s.result.status]} ${s.result.status}`); }); return; }
   const mn = t.closest('[data-manual]');
   if (mn) { guard(async () => { await api('/api/manual', { method: 'POST', body: { id: S.pid, step: mn.dataset.manual, done: mn.dataset.done ? true : null } }); await loadPlan(); }); return; }
+  const ak = t.closest('[data-ask]');
+  if (ak) { askAi(ak.dataset.ask); return; }
   const ex = t.closest('[data-examples]');
   if (ex) { guard(async () => {
     const s = S.plan.steps.find(x => x.id === ex.dataset.examples), q = new URLSearchParams(Object.entries(s.examples).filter(([, v]) => v));
@@ -279,6 +284,31 @@ $('#right').addEventListener('click', e => {
   }); return; }
 });
 $('#center').addEventListener('click', e => { const f = e.target.closest('[data-ex-file]'); if (f) openFile(f.dataset.exFile, +f.dataset.line); });
+
+// ------------------------------------------------------------ optional AI helper
+function askAi(stepId) {
+  const s = S.plan.steps.find(x => x.id === stepId);
+  const off = !S.ai?.enabled || !S.ai?.has_key;
+  setView(`<div class="bar"><b>✦ Ask AI: ${esc(s.title)}</b></div>`,
+    `${off ? `<div class="callout warn">The AI helper is ${S.ai?.enabled ? 'on, but <b>ANTHROPIC_API_KEY</b> is not set' : '<b>off</b>'}.
+       Turn it on with <code>ai: {enabled: true}</code> in ⚙ workspace.yaml and start the tool with <code>ANTHROPIC_API_KEY=sk-ant-… ./run.sh</code>.
+       You can still preview what would be sent.</div>` : ''}
+     <textarea id="ai-q" class="editor" style="min-height:90px" placeholder="Your question (empty = explain this step and what usually goes wrong)"></textarea>
+     <div class="actions"><button class="primary" id="ai-go" ${off ? 'disabled' : ''}>Ask ${esc(S.ai?.model || '')}</button><button id="ai-ctx">Show what gets sent</button></div>
+     <div id="ai-out"></div>`);
+  $('#ai-ctx').onclick = () => guard(async () => {
+    const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, preview: true } });
+    $('#ai-out').innerHTML = `<h4>Context sent with your question</h4><pre class="raw">${esc(r.context)}</pre>`;
+  });
+  $('#ai-go').onclick = () => guard(async () => {
+    const b = $('#ai-go'); b.disabled = true; b.textContent = 'thinking…';
+    try {
+      const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, question: $('#ai-q').value } });
+      $('#ai-out').innerHTML = `<div class="ai-box md">${md(r.answer)}</div><p class="muted small">${esc(r.model)} · answers can be wrong: verify against the binding, the driver source and your board.</p>
+        <details><summary class="small">Context that was sent</summary><pre class="raw">${esc(r.context)}</pre></details>`;
+    } finally { b.disabled = false; b.textContent = 'Ask again'; }
+  });
+}
 
 // ------------------------------------------------------------ forms & settings
 function editText(title, text, help, onSave) {
@@ -302,11 +332,7 @@ $('#btn-form').onclick = () => guard(async () => {
       `${x.binding ? `binding <code>${esc(x.binding.file)}</code> requires <code>${esc((x.binding.required || []).join(', '))}</code>` : 'no binding doc'} · ${x.driver ? `driver <code>${esc(x.driver.file)}</code> → <code>${esc(x.driver.config || '?')}</code>` : 'no driver'}`;
   });
 });
-$('#btn-new').onclick = () => guard(async () => {
-  const id = prompt('Name for the new peripheral (e.g. imu, oled, gps)'); if (!id) return;
-  const r = await api('/api/peripheral/new', { method: 'POST', body: { id } });
-  await loadPeripherals(r.id); $('#btn-form').click();
-});
+$('#btn-new').onclick = () => { location.href = '/#add'; };
 $('#btn-settings').onclick = () => guard(async () => {
   const r = await api('/api/config');
   editText('workspace.yaml', r.text, '<p class="muted small">Point <code>kernel_src</code> at the kernel tree your board runs, set <code>board.transport: ssh</code> plus <code>host</code> once key login works.</p>',
@@ -356,6 +382,7 @@ async function boot() {
   await guard(async () => {
     S.kb = await api('/api/knowledge');
     await loadStatus();
+    S.ai = S.status.ai;
     await Promise.all([loadBoard(), loadSource()]);
     await loadPeripherals();
   });
