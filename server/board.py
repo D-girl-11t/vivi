@@ -241,7 +241,8 @@ _SSH_HINTS = [
     (r'Connection refused', 'The board is reachable, but no SSH server is listening on it.',
      'On the board: check the SSH service is running (systemctl status sshd, or dropbear on small images)'),
     (r'timed out|No route to host|Network is unreachable|timeout after', 'Nothing answered at that address.',
-     'Check the Ethernet cable and the IP with "ip addr" on the board, and that your laptop is on the same network. A direct cable needs a fixed IP on both ends'),
+     'Check the IP with "ip addr" on the board (it may have changed after a reboot), that the Ethernet cable or Wi-Fi is connected, '
+     'and that your laptop is on the same network. A direct cable needs a fixed IP on both ends'),
 ]
 
 

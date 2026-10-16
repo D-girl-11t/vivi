@@ -150,14 +150,26 @@ function renderReach() {
   let h = '';
   if (kind === 'ssh') h = `<p class="muted small">The tool logs in to the board over the network and runs read-only commands.
       You only need the serial cable once, to find the board's address.</p><ol class="reach">
-    ${step(1, 'Connect the cables', `<p>Power, the board's <b>debug USB</b> port to your laptop (serial console), and <b>Ethernet</b> to your router or straight to your laptop.</p>`)}
+    ${step(1, 'Connect the cables', `<p>Power, and the board's <b>debug USB</b> port to your laptop (serial console). For the network, use either
+      <b>Ethernet</b> (to your router or straight to your laptop) or the board's <b>Wi-Fi</b> (step 3 shows both).</p>`)}
     ${step(2, 'Open the serial console', `<p>On your laptop. The board usually shows up as one or two ports; the Linux console is on one of them.</p>
       ${cmd('ls /dev/ttyACM* /dev/ttyUSB*')}${cmd('sudo minicom -D /dev/ttyACM0 -b 115200')}
       <p>Power the board on, wait for <code>login:</code> and log in as <code>root</code>. Nothing shows up? Try the other port.</p>`)}
-    ${step(3, 'Find the board\'s address', `<p>In the serial console, look for <code>inet 192.168.x.y</code> under <code>eth0</code> or <code>eth1</code>:</p>${cmd('ip addr')}
+    ${step(3, 'Get the board on the network and find its address', `
+      <div class="net-tabs"><b>Ethernet</b></div>
+      <p>In the serial console, look for <code>inet 192.168.x.y</code> under <code>eth0</code> or <code>eth1</code>:</p>${cmd('ip addr')}
       <p>No address? <code>udhcpc -i eth0</code>. <b>Cable straight to your laptop?</b> Give both ends a fixed address:</p>
       ${cmd('ip addr add 192.168.7.2/24 dev eth0 && ip link set eth0 up      # on the board')}
-      ${cmd('sudo ip addr add 192.168.7.1/24 dev <your-ethernet>             # on the laptop (see: ip link)')}`)}
+      ${cmd('sudo ip addr add 192.168.7.1/24 dev <your-ethernet>             # on the laptop (see: ip link)')}
+      <div class="net-tabs"><b>Wi-Fi</b></div>
+      <p>Find the Wi-Fi interface (<code>wlan0</code>, or <code>mlan0</code> on NXP Wi-Fi chips), then connect with whichever tool the image has:</p>
+      ${cmd('ip link')}
+      ${cmd('nmcli dev wifi connect "YourWiFi" password "YourPassword"     # if nmcli exists')}
+      ${cmd('connmanctl enable wifi; connmanctl scan wifi; connmanctl services   # if connmanctl exists; then: connmanctl agent on; connmanctl connect wifi_..._psk')}
+      ${cmd('wpa_passphrase "YourWiFi" "YourPassword" > /etc/wpa_supplicant.conf && wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf && udhcpc -i wlan0   # works everywhere')}
+      ${cmd('ip addr show wlan0      # the "inet" number is the board\'s address')}
+      <p class="muted">The board and your laptop must be on the same network. No Wi-Fi interface? Check <code>dmesg | grep -iE "wlan|mlan|firmware"</code>.
+        Wi-Fi addresses can change after a reboot: reserve one in your router.</p>`)}
     ${step(4, 'Give root a password', `<p>Most SSH servers refuse logins with an empty password. On the board:</p>${cmd('passwd')}`)}
     ${step(5, 'Let your laptop log in without a password', `<p>The tool can't type passwords, so it uses a key. On your laptop:</p>
       ${cmd(`ssh ${host}          # first time: type "yes", then the password`)}
