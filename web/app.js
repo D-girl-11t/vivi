@@ -287,7 +287,12 @@ async function rebootAndCheck(btn, rescue) {
     const s = Math.round((Date.now() - t0) / 1000);
     const r = await api('/api/board/test', { method: 'POST', body: { transport: 'ssh', host: S.status.board.transport.replace(/^ssh /, '') } }).catch(() => ({ ok: false }));
     if (!r.ok) wentDown = true;
-    out.innerHTML = `<p class="muted">${r.ok ? (wentDown ? 'back up' : 'still going down…') : `waiting for the board… ${s}s`}</p>`;
+    out.innerHTML = `<p class="muted">${r.ok ? (wentDown ? 'back up' : 'still going down…') : `waiting for the board… ${s}s`}</p>` +
+      (!r.ok && s >= 60 ? `<div class="callout warn small"><b>Taking longer than usual (most boards are back in 30–60 s).</b> Look at minicom:
+        <ul><li><b>You see a <code>login:</code> prompt</b> → it booted, but isn't on the network. Over Wi-Fi this is common: a connection made by hand
+          (wpa_supplicant/udhcpc) doesn't come back after a reboot. Log in, run <code>ip addr</code>, reconnect, and if the IP changed update Board → Change on the home page.</li>
+        <li><b>Boot messages stopped, or a kernel error/panic</b> → this device tree didn't boot. Use the rescue steps below.</li>
+        <li><b>Nothing at all</b> → check minicom is on the right port (<code>/dev/ttyACM*</code>) at 115200.</li></ul>${rescue}</div>` : '');
     if (r.ok && wentDown) { up = true; break; }
   }
   if (!up) { out.innerHTML = `<div class="callout bad"><b>The board did not come back within 4 minutes.</b> Check minicom; use the rescue steps:${rescue}</div>`; btn.disabled = false; return; }
