@@ -1,0 +1,9 @@
+# Created by the "Add a device" wizard. Edit freely: the guide re-reads this file.
+# Every field is explained in the form help (✎ Form in the workspace).
+name: ov2311
+description: ''
+bus: usb
+subsystem: v4l2
+compatible: sony,ov2311
+driver_src: https://github.com/6by9/linux/tree/ov2311
+connection: {}

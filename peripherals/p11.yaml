@@ -1,0 +1,16 @@
+# Peripheral form: read the values off your schematic and datasheet.
+# The tool works out everything else from the source tree and the board.
+name: p11
+description: what it is and what you want from it
+bus: i2c              # gpio | i2c | sai | spi | uart | usb
+subsystem: iio        # alsa | counter | hwmon | iio | input | other | tty | v4l2
+compatible: vendor,chip   # look it up: grep -r "chip" Documentation/devicetree/bindings
+connection:
+  controller: 3       # SoC instance of that bus (lpi2c3 -> 3)
+  reg: 0x68           # I2C address / SPI chip-select
+  pins: []            # e.g. [GPIO_IO28, GPIO_IO29] or [{pad: GPIO_IO08, function: LPSPI3_PCS0}]
+  # irq: {pad: GPIO_IO12, type: IRQ_TYPE_EDGE_FALLING}
+# properties: |       # extra DT properties copied into the node verbatim
+#   vdd-supply = <&reg_3v3>;
+# config: CONFIG_FOO  # override if the driver lookup can't find it
+goal: what "working" means to you
