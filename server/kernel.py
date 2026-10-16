@@ -32,7 +32,7 @@ class KernelTree:
         out = {'version': None, 'origin': None, 'flavor': None}
         try:
             mk = _read(os.path.join(self.root, 'Makefile'))[:2000]
-            v = {k: (re.search(rf'^{k}\s*=\s*(\S*)', mk, re.M) or [None, ''])[1] for k in ('VERSION', 'PATCHLEVEL', 'SUBLEVEL', 'EXTRAVERSION')}
+            v = {k: (re.search(rf'^{k}[ \t]*=[ \t]*(\S*)', mk, re.M) or [None, ''])[1] for k in ('VERSION', 'PATCHLEVEL', 'SUBLEVEL', 'EXTRAVERSION')}
             if v['VERSION']:
                 out['version'] = f"{v['VERSION']}.{v['PATCHLEVEL']}.{v['SUBLEVEL'] or 0}{v['EXTRAVERSION']}"
         except OSError:
