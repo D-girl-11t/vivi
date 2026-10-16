@@ -100,6 +100,19 @@
     <div id="steps"></div>
   </aside>
 </main>
+<!-- chat assistant: stays open while you work; looks things up itself (read-only) -->
+<aside id="chat" class="chat hidden" aria-label="Assistant">
+  <div class="chat-head"><b>✦ Assistant</b><span id="chat-model" class="muted small"></span><span class="spacer"></span>
+    <button id="chat-new" title="Start a new conversation">New chat</button><button id="chat-x" title="Close (the conversation is kept)">✕</button></div>
+  <div id="chat-about" class="chat-about small"></div>
+  <div id="chat-thread" class="chat-thread"></div>
+  <div id="chat-suggest" class="ai-suggest"></div>
+  <div class="chat-input"><textarea id="chat-q" rows="2" placeholder="Ask anything… (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button class="primary" id="chat-go">Send</button><button id="chat-stop" class="hidden">Stop</button></div>
+  <div class="chat-foot small muted">It can <b>read</b> your kernel source, the last board scan, your device forms and the tool's templates, and shows each lookup.
+    It can't change files or touch the board. Answers can be wrong: check them. <a href="#" id="chat-ctx">What it's told about this device</a></div>
+</aside>
+<button id="chat-fab" class="ai-btn chat-fab" title="Open the assistant">✦ Ask</button>
 <div id="toast"></div>
 <script src="/web/app.js"></script>
 </body>

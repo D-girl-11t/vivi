@@ -605,42 +605,70 @@ function aiOffNote() {
   if (!S.ai?.enabled) return `The AI helper is <b>off</b>. Turn it on in ⚙ with <code>ai: {enabled: true}</code>.`;
   return S.ai.backend === 'claude-code' ? 'The <code>claude</code> CLI was not found on PATH.' : '<code>ANTHROPIC_API_KEY</code> is not set.';
 }
-function askAi(stepId) {
-  const s = stepId ? S.plan.steps.find(x => x.id === stepId) : null;
-  const chat = { stepId, history: [] };
-  setView(`<div class="bar"><b>✦ Ask Claude: ${esc(s ? s.title : S.plan.name + ' (whole device)')}</b>
-      <span class="muted small">${esc(S.ai?.label || '')}</span></div>`,
-    `${aiReady() ? '' : `<div class="callout warn">${aiOffNote()} You can still preview what would be sent.</div>`}
-     <div id="ai-thread"></div>
-     <div class="ai-suggest">${AI_SUGGEST[s ? 'step' : 'device'].map(q => `<button class="chip-btn" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-     <div class="ai-input"><textarea id="ai-q" rows="2" placeholder="Ask anything about ${s ? 'this step' : 'this device'}… (Enter to send, Shift+Enter for a new line)"></textarea>
-       <button class="primary" id="ai-go" ${aiReady() ? '' : 'disabled'}>Ask</button></div>
-     <div class="actions"><button id="ai-ctx">Show what gets sent</button>${s ? '' : ''}</div>
-     <p class="muted small">Claude sees only the evidence shown under "what gets sent". It can't read or change your files.
-       Answers can be wrong: check them against the binding, the driver source and your board.</p>
-     <div id="ai-ctx-out"></div>`);
-  const send = q => guard(async () => {
-    q = (q || $('#ai-q').value).trim(); if (!q || !aiReady()) return;
-    $('#ai-q').value = ''; const b = $('#ai-go'); b.disabled = true; b.textContent = '…';
-    const th = $('#ai-thread');
-    th.insertAdjacentHTML('beforeend', `<div class="ai-msg me">${esc(q)}</div><div class="ai-msg bot pending">thinking…</div>`);
-    th.lastElementChild.scrollIntoView({ block: 'end' });
-    try {
-      const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, question: q, history: chat.history } });
-      chat.history.push({ q, a: r.answer });
-      th.lastElementChild.outerHTML = `<div class="ai-msg bot md">${md(r.answer)}<div class="ai-meta">${esc(r.model || '')}${r.seconds ? ` · ${r.seconds}s` : ''}${r.cost_usd ? ` · $${r.cost_usd.toFixed(3)}` : ''}</div></div>`;
-    } catch (e) { th.lastElementChild.outerHTML = `<div class="ai-msg bot err">⚠ ${esc(e.message)}</div>`; }
-    finally { b.disabled = !aiReady(); b.textContent = 'Ask'; }
-  });
-  $('#ai-go').onclick = () => send();
-  $('#ai-q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
-  $$('.ai-suggest [data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
-  $('#ai-ctx').onclick = () => guard(async () => {
-    const r = await api('/api/ask', { method: 'POST', body: { id: S.pid, step: stepId, preview: true } });
-    $('#ai-ctx-out').innerHTML = `<h4>Context sent with each question</h4><pre class="raw">${esc(r.context)}</pre>`;
-  });
-  $('#ai-q').focus();
+// ------------------------------------------------------------ chat assistant (a side panel that stays open)
+const CHAT = { id: null, pid: null, step: null, busy: false, turn: null };
+function askAi(stepId) { openChat(stepId); }
+function openChat(stepId) {
+  CHAT.pid = S.plan ? S.pid : null; CHAT.step = stepId || null;
+  $('#chat').classList.remove('hidden'); $('#chat-fab').classList.add('hidden'); document.body.classList.add('chat-open');
+  $('#chat-model').textContent = S.ai?.label ? '· ' + S.ai.label : '';
+  const s = stepId && S.plan ? S.plan.steps.find(x => x.id === stepId) : null;
+  $('#chat-about').innerHTML = CHAT.pid ? `About: <b>${esc(S.plan.name)}</b>${s ? ` → step <b>${esc(s.title)}</b>` : ' (whole device)'}
+      <span class="muted">· its evidence goes with your next message</span>` : '<span class="muted">No device selected: general questions (it can still read your source and the board scan).</span>';
+  if (!aiReady()) $('#chat-about').innerHTML += `<div class="callout warn">${aiOffNote()}</div>`;
+  const sug = CHAT.pid ? AI_SUGGEST[s ? 'step' : 'device'] : ['What does the last board scan say is broken?', 'Explain board bring-up like I am new to this', 'Which drivers failed to load, and why?'];
+  $('#chat-suggest').innerHTML = sug.map(q => `<button class="chip-btn" data-q="${esc(q)}">${esc(q)}</button>`).join('');
+  $('#chat-q').focus();
 }
+function closeChat() { $('#chat').classList.add('hidden'); $('#chat-fab').classList.remove('hidden'); document.body.classList.remove('chat-open'); }
+function chatBusy(on) {
+  CHAT.busy = on; $('#chat-go').classList.toggle('hidden', on); $('#chat-stop').classList.toggle('hidden', !on);
+}
+async function chatSend(q) {
+  q = (q ?? $('#chat-q').value).trim(); if (!q || CHAT.busy) return;
+  if (!aiReady()) return toast('The AI helper is off or not set up (see the note in the panel)', 5000);
+  $('#chat-q').value = ''; $('#chat-suggest').innerHTML = '';
+  const th = $('#chat-thread');
+  th.insertAdjacentHTML('beforeend', `<div class="ai-msg me">${esc(q)}</div><div class="ai-msg bot pending"><div class="chat-acts"></div><div class="chat-body">thinking…</div></div>`);
+  const bubble = th.lastElementChild, acts = bubble.querySelector('.chat-acts'), body = bubble.querySelector('.chat-body');
+  const scroll = () => { th.scrollTop = th.scrollHeight; }; scroll();
+  chatBusy(true);
+  try {
+    let r;
+    try { r = await api('/api/chat', { method: 'POST', body: { chat: CHAT.id, id: CHAT.pid, step: CHAT.step, message: q } }); }
+    catch (e) { if (/no such chat/.test(e.message)) { CHAT.id = null; r = await api('/api/chat', { method: 'POST', body: { id: CHAT.pid, step: CHAT.step, message: q } }); } else throw e; }
+    CHAT.id = r.chat; CHAT.turn = r.turn;
+    let since = 0, done = false, lastText = '';
+    while (!done) {
+      const p = await api(`/api/chat/poll?chat=${CHAT.id}&turn=${r.turn}&since=${since}`);
+      since = p.next; done = p.done;
+      for (const ev of p.events) {
+        if (ev.type === 'tool') acts.insertAdjacentHTML('beforeend', `<div class="chat-act">🔍 ${esc(ev.text)}</div>`);
+        else if (ev.type === 'text') { lastText = ev.text; body.innerHTML = md(ev.text); bubble.classList.remove('pending'); }
+        else if (ev.type === 'error') { bubble.className = 'ai-msg bot err'; body.textContent = '⚠ ' + ev.text; }
+        else if (ev.type === 'done') {
+          bubble.className = 'ai-msg bot md'; body.innerHTML = md(ev.answer || lastText);
+          if (acts.children.length > 3) { const n = acts.children.length; acts.outerHTML = `<details class="chat-acts"><summary>🔍 looked at ${n} things</summary>${acts.innerHTML}</details>`; }
+          bubble.insertAdjacentHTML('beforeend', `<div class="ai-meta">${esc(ev.model || '')}${ev.seconds ? ` · ${ev.seconds}s` : ''}${ev.cost_usd ? ` · $${ev.cost_usd.toFixed(3)}` : ''}</div>`);
+        }
+      }
+      if (p.events.length) scroll();
+    }
+  } catch (e) { bubble.className = 'ai-msg bot err'; body.textContent = '⚠ ' + e.message; }
+  finally { chatBusy(false); scroll(); }
+}
+$('#chat-go').onclick = () => chatSend();
+$('#chat-q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSend(); } };
+$('#chat-suggest').onclick = e => { const b = e.target.closest('[data-q]'); if (b) chatSend(b.dataset.q); };
+$('#chat-stop').onclick = () => guard(() => api('/api/chat/stop', { method: 'POST', body: { chat: CHAT.id } }));
+$('#chat-x').onclick = closeChat;
+$('#chat-fab').onclick = () => openChat(null);
+$('#chat-new').onclick = () => { if (CHAT.busy) return toast('Wait for the answer, or press Stop'); CHAT.id = null; $('#chat-thread').innerHTML = ''; openChat(CHAT.step); };
+$('#chat-ctx').onclick = e => { e.preventDefault(); guard(async () => {
+  if (!CHAT.pid) return toast('No device selected: it only gets your messages (and reads files itself)', 5000);
+  const r = await api('/api/ask', { method: 'POST', body: { id: CHAT.pid, step: CHAT.step, preview: true } });
+  setView(`<div class="bar"><b>What the assistant is told about ${esc(CHAT.pid)}${CHAT.step ? ' / ' + esc(CHAT.step) : ''}</b></div>`, `<pre class="raw">${esc(r.context)}</pre>`);
+}); };
 
 // ------------------------------------------------------------ forms & settings
 function editText(title, text, help, onSave) {

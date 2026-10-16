@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import ai
+from . import chat as chatm
 from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
 from . import boot as bootf
@@ -266,6 +267,39 @@ def ask(q, body):
         raise ApiError(str(e))
     res['context'] = ctx
     return res
+
+
+# ---------------------------------------------------------------- chat assistant (looks things up itself, read-only)
+@route('POST', '/api/chat')
+def chat_send(q, body):
+    c = chatm.get(body.get('chat')) or chatm.new_chat()
+    ctx = key = None
+    pid = body.get('id')
+    if pid and pid in {p['id'] for p in WS.peripherals()}:
+        pl = plan(WS.periph_form(pid), KB, WS, WS.progress().get(pid, {}))
+        step = next((s for s in pl['steps'] if s['id'] == body.get('step')), None)
+        ctx, key = ai.build_context(WS, WS.periph_text(pid), pl, step), f"{pid}/{body.get('step') or ''}"
+    try:
+        n = chatm.start_turn(WS, c, (body.get('message') or '').strip() or 'Where am I and what should I do next?', ctx, key)
+    except RuntimeError as e:
+        raise ApiError(str(e))
+    return {'chat': c['id'], 'turn': n}
+
+
+@route('GET', '/api/chat/poll')
+def chat_poll(q, body):
+    c = chatm.get(q.get('chat'))
+    if not c or int(q.get('turn', -1)) >= len(c['turns']):
+        raise ApiError('no such chat (the server was restarted?): start a new chat', 404)
+    return chatm.poll(c, int(q['turn']), int(q.get('since', 0)))
+
+
+@route('POST', '/api/chat/stop')
+def chat_stop(q, body):
+    c = chatm.get(body.get('chat'))
+    if c:
+        chatm.stop(c)
+    return {'ok': True}
 
 
 # ---------------------------------------------------------------- board
