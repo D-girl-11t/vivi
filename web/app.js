@@ -180,13 +180,15 @@ const LIVE = '(live: what the board booted)';
 async function loadBoot(detect = true) {
   const el = $('#left-boot');
   el.innerHTML = `<p class="muted small">${detect ? 'reading the boot partition and working out which file boots (compares each one with the live tree)…' : 'reading the boot partition…'}</p>`;
-  try { S.boot = await api('/api/boot/files' + (detect ? '?detect=1' : '')); }
+  const lost = S.ping && S.ping.reachable === false && S.status?.board?.live;
+  try { S.boot = await api('/api/boot/files' + (lost ? '?offline=1' : detect ? '?detect=1' : '')); }
   catch (e) { el.innerHTML = `<div class="callout warn small">${esc(e.message)}</div>`; S.boot = null; return; }
   renderBoot();
 }
 function bootsName() { const c = S.boot?.closest; return c && c.length && (c.length < 2 || c[0].diff < c[1].diff) ? c[0].name : null; }
 function renderBoot() {
   const b = S.boot, el = $('#left-boot'), boots = b.fdtfile || bootsName();
+  if (b.offline) return renderBootOffline();
   if (b.error) { el.innerHTML = `<div class="callout warn small">${esc(b.error)}</div>`; return; }
   const fmt = t => new Date(t * 1000).toISOString().slice(0, 10);
   // the names share a long prefix (imx93-11x11-frdm…): show the part that tells them apart
@@ -204,6 +206,46 @@ function renderBoot() {
       <span class="muted">${(f.size / 1024).toFixed(0)}K · ${fmt(f.mtime)}</span></div>`).join('')}</div>
     <div id="boot-act"></div>`;
   el.onclick = onBootClick;
+}
+// board unreachable: no file can be changed, but U-Boot can still load any of them once, typed over the serial console
+function renderBootOffline() {
+  const b = S.boot, el = $('#left-boot'), boots = b.fdtfile || b.boots_offline || bootsName();
+  const dtbs = b.files.filter(f => /\.dtb(\.|$)/.test(f.name));
+  el.innerHTML = `<div class="callout warn small"><b>Offline:</b> ${esc(b.offline_reason)}. This is the list ${b.saved ? 'from ' + esc(b.saved) : 'from what the tool did earlier'}
+      ${b.dir ? `in <code>${esc(b.dir)}</code>` : ''}. Files can't be changed now, but you can <b>boot any of them once</b> by typing two
+      U-Boot commands into the serial console. You'll see them and press OK first.</div>
+    <div class="actions"><button data-bact="reload">↻ Check again</button></div>
+    <p class="small muted">${boots ? `Normally U-Boot loads <b>${esc(boots)}</b>.` : ''}</p>
+    <div id="boot-list">${dtbs.map(f => `<div class="row boot-row off ${f.name === boots ? 'boots' : ''}" title="${esc(f.name)}">
+      <span class="dot ${f.name === boots ? 'okay' : ''}"></span><span class="bn">${esc(f.name)}${f.note ? `<br><span class="muted small">${esc(f.note)}</span>` : ''}</span>
+      <button class="chip-btn" data-bact="serial-boot" data-use="${esc(f.name)}" data-note="${esc(f.note || '')}" title="Type the U-Boot commands for this file into the serial console">▶ Boot via serial</button></div>`).join('')
+      || '<p class="muted small">No .dtb files known.</p>'}</div>
+    <p class="small muted">Not in the list? At the U-Boot prompt <code>ls mmc 0:1</code> lists the boot partition.</p>`;
+  el.onclick = onBootClick;
+}
+function serialBootDlg(use, note) {
+  const d = document.createElement('dialog'); d.className = 'dlg wide';
+  const swapped = (S.boot.files || []).some(f => f.name === use && /\(backup\)/.test(f.note || ''));
+  const asName = swapped && (S.boot.boots_offline || S.boot.fdtfile);
+  d.innerHTML = `<h2>Boot ${esc(use)} via the serial console?</h2>
+    <p class="small">These commands will be typed into U-Boot, one at a time, each after the <code>=&gt;</code> prompt appears. You can edit them here.</p>
+    <textarea id="sb-cmds" rows="3" spellcheck="false" style="width:100%;font-family:var(--mono)">setenv fdtfile ${esc(use)}
+boot</textarea>
+    <ul class="small">
+      <li><b>Nothing on the board is changed.</b> <code>setenv</code> without <code>saveenv</code> only lasts until the next reset, so a normal reset goes back to the usual file.</li>
+      <li>The board must be <b>at the U-Boot prompt</b> (<code>=&gt;</code>). If it isn't, the commands wait. Press the board's <b>RESET</b> button and the tool stops U-Boot for you (tick below).</li>
+      ${asName ? `<li>To keep it after it boots, in Linux: <code>cd ${esc(S.boot.dir || '/boot')} &amp;&amp; cp ${esc(use)} ${esc(asName)} &amp;&amp; sync</code></li>` : ''}
+    </ul>
+    <label class="small" style="flex-direction:row;align-items:center;gap:6px;font-weight:400"><input type="checkbox" id="sb-catch" style="width:auto" checked> Tap keys for 60 s to stop U-Boot (then press RESET on the board)</label>
+    <div class="dlg-actions"><button id="sb-no">Cancel</button><button class="primary" id="sb-ok">OK, put them on the serial console</button></div>`;
+  document.body.appendChild(d); d.showModal();
+  const close = () => { d.close(); d.remove(); };
+  d.querySelector('#sb-no').onclick = close;
+  d.addEventListener('cancel', close);
+  d.querySelector('#sb-ok').onclick = () => {
+    const cmds = d.querySelector('#sb-cmds').value.split('\n').map(x => x.trim()).filter(Boolean), cat = d.querySelector('#sb-catch').checked;
+    close(); if (cmds.length) guard(() => serQueue(cmds, cat, use));
+  };
 }
 function onBootClick(e) {
   const t = e.target.closest('[data-bact],[data-bfile]'); if (!t) return;
@@ -224,6 +266,7 @@ function onBootClick(e) {
   if (a === 'cmp') return compareDtb(t.dataset.a, t.dataset.b);
   if (a === 'switch') return switchDtb(t.dataset.use);
   if (a === 'install') return installDtb();
+  if (a === 'serial-boot') return serialBootDlg(t.dataset.use, t.dataset.note);
 }
 const nice = n => n === LIVE ? 'what the board booted' : n === 'source' ? 'your Kernel source build' : n;
 async function compareDtb(a, b) {
@@ -313,10 +356,46 @@ const stripAnsi = t => t.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Za-z0-9]|\x1
 function serAppend(chunk) {
   if (!chunk) return;
   // carriage returns: "abc\rxy" redraws the line; keep it simple: drop lone \r, keep \n
+  const clean = stripAnsi(chunk).replace(/\r(?!\n)/g, '').replace(/\r\n/g, '\n').replace(/[\x07\x00]/g, '');
+  SER.total = (SER.total || 0) + clean.length;
   SER.text = (SER.text + stripAnsi(chunk).replace(/\r(?!\n)/g, '').replace(/\r\n/g, '\n').replace(/[\x07\x00]/g, '')).slice(-200000);
   const o = $('#ser-out'), atEnd = o.scrollTop + o.clientHeight >= o.scrollHeight - 30;
   o.textContent = SER.text; if (atEnd) o.scrollTop = o.scrollHeight;
-  renderSerQuick();
+  renderSerQuick(); serQueueStep();
+}
+// queued commands (from Boot → Boot via serial): each one is sent only once a fresh U-Boot "=>" prompt shows
+async function serQueue(cmds, catchUboot, label) {
+  switchTab('center', 'serial');
+  await initSerial();
+  if (!SER.open) {
+    const port = $('#ser-port').value; if (!port) throw new Error('No serial port found: plug in the debug USB cable');
+    const r = await api('/api/serial/open', { method: 'POST', body: { dev: port, baud: $('#ser-baud').value } });
+    SER.text = ''; serSetState(r); serStream();
+  }
+  SER.queue = { cmds: [...cmds], label, after: -1, sent: [] };
+  const atPrompt = /=>\s*$/.test(SER.text.slice(-200));
+  if (catchUboot && !atPrompt) { serSetState(await api('/api/serial/catch-uboot', { method: 'POST', body: { seconds: 60 } })); }
+  else if (!atPrompt) await api('/api/serial/send', { method: 'POST', body: { key: 'enter' } });   // show the prompt if it's there
+  renderSerQueue(); serQueueStep();
+}
+async function serQueueStep() {
+  const q = SER.queue; if (!q || q.busy) return;
+  if (!/=>\s*$/.test(SER.text.slice(-200)) || (SER.total || 0) <= q.after) return;
+  const cmd = q.cmds.shift(); if (!cmd) return;
+  q.busy = true;
+  try { await serSend(cmd); q.sent.push(cmd); q.after = (SER.total || 0) + cmd.length; }
+  catch (e) { toast('⚠ ' + e.message, 6000); q.cmds = []; }
+  q.busy = false;
+  if (!q.cmds.length) { SER.queue = null; toast(`✓ Sent to U-Boot: ${q.sent.join(' → ')}. Watch the console boot.`, 7000); }
+  renderSerQueue();
+}
+function renderSerQueue() {
+  const q = SER.queue, el = $('#ser-queue');
+  if (!q) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="callout small"><b>Waiting to boot ${esc(q.label || '')}:</b> ${q.cmds.map(c => `<code>${esc(c)}</code>`).join(' → ')}
+    ${q.sent.length ? `<span class="muted">(sent: ${q.sent.map(esc).join(', ')})</span>` : ''}<br>
+    ${/=>\s*$/.test(SER.text.slice(-200)) ? 'At the U-Boot prompt: sending…' : 'Waiting for the U-Boot prompt <code>=&gt;</code>. <b>Press RESET on the board now.</b>'}
+    <button class="chip-btn" data-catch="1">⏸ Stop in U-Boot on next reset</button> <button class="chip-btn" data-qcancel="1">Cancel</button></div>`;
 }
 async function initSerial() {
   const r = await api('/api/serial/ports');
@@ -358,6 +437,7 @@ $('#ser-line').onkeydown = e => {
 };
 $('#center-serial').addEventListener('click', e => {
   const k = e.target.closest('[data-key]'); if (k) return guard(() => api('/api/serial/send', { method: 'POST', body: { key: k.dataset.key } }));
+  if (e.target.closest('[data-qcancel]')) { SER.queue = null; renderSerQueue(); return toast('Cancelled: nothing was sent'); }
   const q = e.target.closest('[data-cmd]'); if (q) { $('#ser-line').value = q.dataset.cmd; $('#ser-line').focus(); return; }
   const cu = e.target.closest('[data-catch]'); if (cu) return guard(async () => { serSetState(await api('/api/serial/catch-uboot', { method: 'POST', body: { seconds: 40 } }));
     toast('Now press the board\'s RESET button (or power-cycle it). Keys are being tapped for 40 s to stop at U-Boot.', 8000); });
@@ -644,7 +724,7 @@ function drawLive() {
 setInterval(async () => {
   if (document.hidden || !S.status?.board?.live) return;
   const p = await api('/api/board/ping').catch(() => null);
-  if (p && p.reachable !== S.ping?.reachable) { S.ping = p; loadStatus(); if (p.reachable === false) toast('⚠ The board stopped answering: try the Serial tab', 6000); }
+  if (p && p.reachable !== S.ping?.reachable) { S.ping = p; loadStatus(); S.boot = null; if (!$('#left-boot').classList.contains('hidden')) guard(loadBoot); if (p.reachable === false) toast('⚠ The board stopped answering: try the Serial tab', 6000); }
   else if (p) S.ping = p;
 }, 20000);
 async function boot() {

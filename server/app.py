@@ -325,16 +325,71 @@ def _live_transport():
 _BOOT_CACHE: dict = {}
 
 
+def _boot_offline(reason: str) -> dict:
+    """What we last knew about the boot files, for booting one from the serial console while the
+    board is unreachable: the saved listing, plus the names the tool's own switches/installs created."""
+    try:
+        info = json.load(open(os.path.join(WS.state_dir, 'boot-files.json')))
+    except (OSError, ValueError):
+        info = {'dir': None, 'files': [], 'fdtfile': None}
+    try:
+        hist = json.load(open(os.path.join(WS.state_dir, 'boot-history.json')))
+    except (OSError, ValueError):
+        hist = []
+    notes, boots = {}, info.get('fdtfile')
+    for h in hist:
+        m = re.match(r'cd (\S+) &&', h.get('undo_linux') or '')
+        if m and not info.get('dir'):
+            info['dir'] = m.group(1)
+        if h.get('action') == 'switch' and h.get('method') == 'swap':
+            notes[h['as']] = f"a copy of {h['boots']} since {h['time']}"
+            notes[h['backup']] = f"what {h['as']} was before {h['time']} (backup)"
+            notes.setdefault(h['boots'], '')
+            boots = boots if info.get('fdtfile') else h['as']
+        elif h.get('action') == 'switch':
+            notes[h['boots']] = f"set as fdtfile at {h['time']}"
+            notes[h['previous']] = f"the fdtfile before {h['time']}"
+            boots = h['boots']
+        elif h.get('action') == 'install':
+            notes[h['name']] = f"installed from your source at {h['time']}"
+    known = {f['name'] for f in info['files']}
+    for n in notes:
+        if n and n not in known:
+            info['files'].append({'name': n, 'size': 0, 'mtime': 0, 'kind': 'dtb' if n.endswith('.dtb') else 'backup'})
+    for f in info['files']:
+        f['note'] = notes.get(f['name'], '')
+    if not info['files']:
+        raise ApiError(f'{reason}, and the boot files were never listed while it was connected. '
+                       'In the Serial tab, at the U-Boot prompt, `ls mmc 0:1` lists them.')
+    return dict(info, offline=True, offline_reason=reason, boots_offline=boots)
+
+
 @route('GET', '/api/boot/files')
 def boot_files(q, body):
-    t = _live_transport()
+    if not WS.transport.live:
+        return _boot_offline('the board is not connected')
+    if q.get('offline'):
+        return _boot_offline('the board is not answering')
+    t = WS.transport
     info = bootf.boot_info(t)
+    if not info.get('dir'):
+        try:
+            return _boot_offline('could not read the boot partition')
+        except ApiError:
+            return info
     if q.get('detect') and info.get('dir'):
         key = tuple((f['name'], f['size'], f['mtime']) for f in info['files'])
         if _BOOT_CACHE.get('key') != key:
             _BOOT_CACHE.update(key=key, closest=bootf.closest_to_live(t, info))
         info['closest'] = _BOOT_CACHE['closest']
     info['live_name'] = bootf.LIVE
+    saved = dict(info, saved=time.strftime('%Y-%m-%d %H:%M'))
+    if 'closest' not in saved:          # keep the last detection: it tells which file U-Boot loads
+        try:
+            saved['closest'] = json.load(open(os.path.join(WS.state_dir, 'boot-files.json'))).get('closest')
+        except (OSError, ValueError):
+            pass
+    json.dump(saved, open(os.path.join(WS.state_dir, 'boot-files.json'), 'w'), indent=1)
     return info
 
 

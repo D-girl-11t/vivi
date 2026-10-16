@@ -273,3 +273,7 @@ ol.reach { padding-left: 20px; margin: 6px 0; } ol.reach li { margin: 10px 0; } 
 .serial-in { display: flex; gap: 6px; } .serial-in input { flex: 1; font-family: var(--mono); }
 .serial-quick { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .chip.lost { border-color: var(--fail); color: var(--fail); cursor: help; }
+
+.boot-row.off { align-items: center; }
+.boot-row.off .bn { flex: 1; white-space: normal; word-break: break-all; }
+#ser-queue .callout { margin: 6px 0; }
