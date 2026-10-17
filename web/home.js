@@ -2,6 +2,7 @@
 'use strict';
 
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 async function api(path, opts = {}) {
   const o = { ...opts };
@@ -318,7 +319,7 @@ const TOP_LEVEL = new Set(['format', 'codec_ref', 'card_name']);
 let W;
 
 function openWizard() {
-  W = { step: 0, q: '', results: [], compatible: '', check: null, driver_src: '', bus: '', subsystem: '', fields: {}, name: '', goal: '', description: '' };
+  W = { step: 0, q: '', results: [], find: null, web: null, compatible: '', check: null, driver_src: '', bus: '', subsystem: '', fields: {}, name: '', goal: '', description: '' };
   renderWizard(); $('#dlg-wizard').showModal(); setTimeout(() => $('#wz-q')?.focus(), 50);
 }
 $('#wiz-cancel').onclick = () => $('#dlg-wizard').close();
@@ -342,37 +343,104 @@ function renderWizard() {
   $('#wiz-back').style.visibility = W.step ? 'visible' : 'hidden';
   $('#wiz-next').textContent = W.step === STEPS.length - 1 ? 'Create and open the guide →' : 'Next →';
   $('#wiz-body').innerHTML = [stepWhat, stepDriver, stepConnection, stepName][W.step]();
+  $('#wiz-body').onclick = null;
   if (W.step === 0) wireSearch();
   if (W.step === 2) $('#wz-bus').onchange = e => { saveFields(); W.bus = e.target.value; renderWizard(); };
 }
 
+// step 1 is the Part finder: from whatever you know (product name, chip marking, part number) to the compatible string
 function stepWhat() {
+  const ai = O.ai || {};
   return `<h2>What are you connecting?</h2>
-    <p class="muted">Type the chip's part number (e.g. <code>bme280</code>, <code>imx219</code>, <code>ics43432</code>).
-      Linux identifies hardware by a <b>compatible string</b>, <code>vendor,part</code>. We search your kernel tree for matches.</p>
-    <input id="wz-q" class="big-input" placeholder="part number or compatible…" value="${esc(W.q)}" autocomplete="off">
+    <p class="muted">Type <b>anything you know</b>: the product name, the part number printed on the chip, or a line from the shop page
+      (e.g. <code>ICS-43434 mic breakout</code>, <code>Sony IMX519</code>, <code>bme280</code>). Linux names hardware by a
+      <b>compatible string</b>, <code>vendor,part</code>, and the Part finder looks it up in your kernel tree.</p>
+    <input id="wz-q" class="big-input" placeholder="product name, chip marking or part number…" value="${esc(W.q)}" autocomplete="off">
     <div id="wz-results" class="results">${resultsHtml()}</div>
+    <div id="wz-web">${webHtml()}</div>
+    <details class="reach-help" ${W.web ? '' : ''}><summary>Where do I find the part number?</summary><ul class="small">
+      <li><b>Bought a module or breakout board?</b> What matters is the <b>chip on it</b>. The product page's spec table usually names it
+        ("Sensor: Sony IMX519", "Microphone: TDK InvenSense ICS-43434").</li>
+      <li><b>The chip itself:</b> the marking printed on it, then the maker's datasheet (bus, pins, supplies).</li>
+      <li><b>The vendor's Linux code</b> (often on GitHub): its device-tree example shows the exact compatible.</li>
+      <li>Only know the product name? Use <b>🌐 Identify the chips</b>${ai.enabled && ai.ready ? '' : ' (needs the AI helper)'}: Claude searches the web for what's on it.</li></ul></details>
     <label class="small">Or type the exact compatible string yourself
-      <input id="wz-compat" value="${esc(W.compatible)}" placeholder="vendor,part" autocomplete="off"></label>
-    <p class="hint">Not sure of the vendor prefix? It's usually the maker's short name (<code>sony</code>, <code>bosch</code>, <code>ti</code>, <code>st</code>).
-      If the part isn't in your kernel at all, still type it: the guide will show you how to bring in a driver.</p>`;
+      <input id="wz-compat" value="${esc(W.compatible)}" placeholder="vendor,part" autocomplete="off"></label>`;
+}
+const BOARD_CFG = v => v == null ? '' : v === 'y' ? '<span class="ok-t">built into your board\'s kernel</span>' :
+  v === 'm' ? '<span class="ok-t">a module on your board</span>' : '<span class="warn-t">not enabled on your board</span>';
+function hitHtml(h) {
+  return `<button class="res ${h.compatible === W.compatible ? 'sel' : ''}" data-c="${esc(h.compatible)}">
+    <span><code>${esc(h.compatible)}</code>${h.subsystem ? ` <span class="pill">${esc(h.subsystem)}</span>` : ''}</span>
+    <span class="small">${h.driver ? `✓ driver <span class="muted">${esc(h.driver)}</span> · <code>${esc(h.config || '?')}</code> ${BOARD_CFG(h.board_config)}` : '✗ no driver in your kernel'}
+      · ${h.binding ? '✓ binding' : 'no binding doc'}</span></button>`;
+}
+function partHtml(p, vendorHint) {
+  let h = '';
+  if (p.kind === 'exact') h += `<div class="pf-head">Matches for <b>${esc(p.token)}</b>:</div>`;
+  else if (p.kind === 'family') h += `<div class="callout small"><b>No exact match for ${esc(p.token)}</b>, but your kernel has a driver for the same chip family
+      (<code>${esc(p.family)}…</code>). Siblings usually share one driver when they speak the same interface: check the datasheet or
+      the binding text says so, then pick it.</div>`;
+  else h += `<div class="callout warn small"><b>Nothing in your kernel for ${esc(p.token)}</b>. Usually that means <b>no driver yet</b>:
+      you'll need the maker's driver (the guide adds the Driver steps).
+      ${vendorHint ? `<br>Its compatible is then most likely <button class="chip-btn" data-c="${esc(vendorHint + ',' + p.token)}">${esc(vendorHint + ',' + p.token)}</button> (vendor prefix of the maker you typed).` : ''}</div>`;
+  h += p.hits.map(hitHtml).join('');
+  if (p.mentions.length) h += `<details class="small pf-ment"><summary>Mentioned in ${p.mentions.length} kernel file${p.mentions.length > 1 ? 's' : ''}</summary>${p.mentions.map(m =>
+    `<div><code>${esc(m.file)}:${m.line}</code> <span class="muted">${esc(m.text)}</span>
+      ${(m.compatibles || []).map(c => `<button class="chip-btn" data-c="${esc(c)}">${esc(c)}</button>`).join('')}${m.config ? ` <code>${esc(m.config)}</code>` : ''}</div>`).join('')}</details>`;
+  return h;
 }
 function resultsHtml() {
-  if (!W.q) return '';
-  if (!W.results.length) return `<div class="muted small">No compatible containing “${esc(W.q)}” in your kernel tree. That usually means <b>no driver yet</b>. Type the string below (e.g. <code>sony,${esc(W.q)}</code>).</div>`;
-  return W.results.map(r => `<button class="res ${r.compatible === W.compatible ? 'sel' : ''}" data-c="${esc(r.compatible)}">
-    <code>${esc(r.compatible)}</code>
-    <span class="small">${r.driver ? `✓ driver <span class="muted">${esc(r.driver)}</span>` : '✗ no driver'} · ${r.binding ? '✓ binding' : 'no binding doc'}</span></button>`).join('');
+  const r = W.find;
+  if (!W.q || !r) return '';
+  if (r.error) return `<div class="callout warn small">${esc(r.error)}</div>`;
+  if (!r.parts.length) return `<div class="muted small">No part number in that text (part numbers mix letters and digits, like <code>imx519</code>). Try the chip's marking, or 🌐 Identify the chips.</div>`;
+  return r.parts.map(p => partHtml(p, r.vendor_hint)).join('<hr class="pf-sep">');
+}
+function webHtml() {
+  const ai = O.ai || {}, w = W.web;
+  let h = `<div class="pf-web-row"><button id="wz-webgo" ${ai.enabled && ai.ready && W.q ? '' : 'disabled'} title="${ai.enabled && ai.ready ? 'Claude searches the web for the chips on this product; each suggestion is then checked against your kernel tree' : 'Turn on the AI helper first (home page → Rules vs AI)'}">🌐 Identify the chips on this product</button>
+    <span class="muted small">web search by Claude, ~30–90 s · checked against your kernel tree</span></div>`;
+  if (!w) return h;
+  if (w.loading) return h + '<div class="muted small">searching the web for the product, its datasheet and drivers…</div>';
+  if (w.error) return h + `<div class="callout bad small">${esc(w.error)}</div>`;
+  if (!w.chips?.length) return h + `<div class="callout warn small">Couldn't tell which chips are on it.${w.raw ? `<pre class="raw">${esc(w.raw.slice(0, 1500))}</pre>` : ''}</div>`;
+  return h + `<div class="pf-web"><div class="small"><b>${esc(w.product || W.q)}</b> <span class="muted">· from the web: verify against the sources</span></div>
+    ${w.chips.map(c => `<div class="pf-chip"><div><b>${esc(c.part)}</b> <span class="muted">by ${esc(c.maker || '?')}</span> · ${esc(c.role || '')}
+        ${c.bus ? `<span class="pill">${esc(c.bus)}</span>` : ''}</div>
+      ${(c.sources || []).length ? `<div class="small">sources: ${c.sources.slice(0, 3).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//, '').slice(0, 50))}</a>`).join(' · ')}</div>` : ''}
+      ${c.linux_driver ? `<div class="small muted">Linux driver it found: ${esc(c.linux_driver)}</div>` : ''}
+      ${c.kernel && !c.kernel.error ? c.kernel.parts.map(p => partHtml(p, (c.compatible_guess || '').split(',')[0] || c.kernel.vendor_hint)).join('') : ''}
+      ${c.compatible_guess ? `<div class="small">Claude's guess for the compatible: <button class="chip-btn" data-c="${esc(c.compatible_guess)}">${esc(c.compatible_guess)}</button></div>` : ''}
+    </div>`).join('')}
+    ${w.notes ? `<div class="callout small">${esc(w.notes)}</div>` : ''}
+    ${w.cost_usd ? `<div class="muted small">cost $${w.cost_usd.toFixed(3)}</div>` : ''}</div>`;
+}
+function pick(c) {
+  W.compatible = c; $('#wz-compat').value = c;
+  $$('#dlg-wizard .res, #dlg-wizard [data-c]').forEach(b => b.classList.toggle('sel', b.dataset.c === c));
+  toast(`picked ${c}: press Next →`);
 }
 function wireSearch() {
   let tm;
-  $('#wz-q').oninput = e => { W.q = e.target.value.trim(); clearTimeout(tm); tm = setTimeout(() => guard(async () => {
-    if (W.q.length < 2) { W.results = []; $('#wz-results').innerHTML = ''; return; }
+  $('#wz-q').oninput = e => { W.q = e.target.value.trim(); W.web = null; $('#wz-web').innerHTML = webHtml(); clearTimeout(tm); tm = setTimeout(() => guard(async () => {
+    if (W.q.length < 2) { W.find = null; W.results = []; $('#wz-results').innerHTML = ''; return; }
     $('#wz-results').innerHTML = '<div class="muted small">searching your kernel tree…</div>';
-    const r = await api('/api/wizard/search?q=' + encodeURIComponent(W.q));
-    W.results = r.items; $('#wz-results').innerHTML = r.note ? `<div class="muted small">${esc(r.note)}</div>` : resultsHtml();
-  }), 300); };
-  $('#wz-results').onclick = e => { const b = e.target.closest('[data-c]'); if (!b) return; W.compatible = b.dataset.c; $('#wz-compat').value = W.compatible; $('#wz-results').innerHTML = resultsHtml(); };
+    const q = W.q, r = await api('/api/parts/find?q=' + encodeURIComponent(q));
+    if (q !== W.q) return;
+    W.find = r; W.results = (r.parts || []).flatMap(p => p.hits);
+    $('#wz-results').innerHTML = resultsHtml();
+  }), 400); };
+  $('#wiz-body').onclick = e => {
+    const b = e.target.closest('[data-c]'); if (b) return pick(b.dataset.c);
+    if (e.target.id === 'wz-webgo') guard(async () => {
+      W.web = { loading: true }; $('#wz-web').innerHTML = webHtml();
+      try { W.web = await api('/api/parts/web', { method: 'POST', body: { q: W.q } }); }
+      catch (err) { W.web = { error: err.message }; }
+      W.results = W.results.concat((W.web.chips || []).flatMap(c => (c.kernel?.parts || []).flatMap(p => p.hits)));
+      $('#wz-web').innerHTML = webHtml();
+    });
+  };
   $('#wz-compat').oninput = e => { W.compatible = e.target.value.trim(); };
 }
 

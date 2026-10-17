@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import ai
 from . import chat as chatm
+from . import parts
 from .board import sysfs_stream_cmd, test_connection
 from .planner import Knowledge, PinResolver, plan
 from . import boot as bootf
@@ -178,6 +179,21 @@ def wizard_search(q, body):
     for it in items:
         it.update(WS.ktree.guess_kind(it['binding'], it['driver']))
     return {'items': items}
+
+
+@route('GET', '/api/parts/find')
+def parts_find(q, body):
+    """Part finder, offline: part numbers in any text -> compatible strings, drivers, board state."""
+    return parts.find_in_kernel(WS, q.get('q', ''))
+
+
+@route('POST', '/api/parts/web')
+def parts_web(q, body):
+    """Part finder, AI: which chips are on this product (web search), then checked against the kernel tree."""
+    try:
+        return parts.ask_web(WS, (body.get('q') or '').strip())
+    except RuntimeError as e:
+        raise ApiError(str(e))
 
 
 @route('GET', '/api/wizard/check')

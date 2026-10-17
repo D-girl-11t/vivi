@@ -295,3 +295,13 @@ ol.reach { padding-left: 20px; margin: 6px 0; } ol.reach li { margin: 10px 0; } 
 .chat-fab { position: fixed; right: 18px; bottom: 18px; z-index: 40; border-radius: 99px; padding: 8px 16px; background: var(--bg, #fff);
   box-shadow: 0 4px 14px rgba(20, 40, 20, .18); }
 @media (min-width: 1500px) { body.chat-open #layout { margin-right: 460px; } }
+
+/* part finder */
+.pf-head { margin: 8px 0 4px; font-size: 13px; }
+.pf-sep { border: 0; border-top: 1px dashed var(--line); margin: 10px 0; }
+.pf-ment { margin: 4px 0 8px; } .pf-ment > div { margin: 3px 0 3px 12px; }
+.pf-web-row { display: flex; gap: 10px; align-items: center; margin: 10px 0 6px; flex-wrap: wrap; }
+.pf-web { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); }
+.pf-chip { border-top: 1px solid var(--line); padding: 8px 0; } .pf-chip:first-of-type { border-top: 0; }
+.ok-t { color: #1a7a3a; } .warn-t { color: #a86a00; }
+.res .pill { font-size: 11px; }
